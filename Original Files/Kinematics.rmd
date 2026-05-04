@@ -1,0 +1,1208 @@
+---
+title: "Kinematics"
+author: "Elsa Goerig & Theodore Castro-Santos"
+date: "19/07/2021"
+dependants: Compiler & Transformer, which brings data into a single tidy matrix, rotated and translated x-y data.
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+## Set up & Import data
+```{r Set up & Import data,}
+library(readxl)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(xlsx)
+
+#setwd("F:/Mega kinematic all videos/Analysis")
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+getwd()
+
+rm(list=ls())
+
+# Import data #
+# 
+# Multisp<-read_excel("D:/Mega kinematic all videos/3. multispecies spreadsheet/Multi-species spreadsheet.xlsx")
+
+#Raw files are copied to a subdirectory called 'source' to make sure they are not overwritten.
+midlines<-read.csv("MidlinesAdj.csv")
+str(midlines)
+midlines<-select(midlines,2:17)#Check against raw file to make sure structure is the same
+Multisp<-read_excel("F:/Mega kinematic all videos/3. multispecies spreadsheet/Multi-species spreadsheet.xlsx")
+Multisp$clip_id <- as.integer(Multisp$clip_id)
+
+# Remove the lamprey ammocoetes & transformers from the dataset. We won't use these in the current project.
+midlines <- subset(midlines, species!="Petromyzon_marinus_ammocoete")
+midlines <- subset(midlines, species!="Petromyzon_marinus_transformer")
+Multisp <- subset(Multisp,species!="Petromyzon_marinus_ammocoete")
+Multisp <- subset(Multisp,species!="Petromyzon_marinus_transformer")
+
+#During QC we discovered that clip_id 2 has midlines 10 and 11 reversed.  Fix that here:
+
+midlines$midline<-ifelse(
+  midlines$clip_id==2&midlines$midline==10,11,
+  ifelse(midlines$clip_id==2&midlines$midline==11,10,
+         midlines$midline))
+
+# harmonize species names in midline files
+midlines$species[midlines$species=="Anguilla rostrata"] <- "Anguilla_rostrata"
+midlines$species[midlines$species=="Thunnus albacares"] <- "Thunnus_albacares"
+midlines$species[midlines$species=="Caranx hippos"] <- "Caranx_hippos"
+midlines$species[midlines$species=="Devario aequipinnatus"] <- "Devario_aequipinnatus" 
+
+#### Tailbeat frequency ####
+#Frequency is just the inverse of time
+Multisp$TBF<-Multisp$fps/Multisp$totalframes
+
+#### Create a kinematics dataframe ####
+megakine <- select(Multisp,"species", "clip_id", "lab", "speedflowBL", "speedflow_m","fps", "TL", "TBF")
+Swimmingmode <- read_excel("F:/Mega kinematic all videos/Analysis/Swimmingmode.xlsx")
+Swimmingmode$Swimmingmode <- as.factor(Swimmingmode$Swimmingmode)
+
+megakine <- merge(megakine, Swimmingmode, by="clip_id")
+megakine$species.x <- NULL
+megakine$speedflowBL <- as.numeric(megakine$speedflowBL)
+megakine$TL <- as.numeric(megakine$TL)
+
+```
+
+## Groundspeeds & swimspeeds
+```{r Groundspeeds & swimspeeds}
+#### Groundspeeds#####
+
+# Calculate groundspeed for all fish, based on video clips.
+a1 <- midlines %>% group_by(clip_id) %>% top_n(-1,frame)%>% top_n(1,location)
+a2 <- midlines %>% group_by(clip_id) %>% top_n(1,frame)%>% top_n(1,location)
+a <- rbind(a1, a2)
+a <- arrange(a,clip_id) # keep only max location (tip of tail) for min and max midlines
+
+#calculate distance between tip of tail at first and last midline for each fish
+a<-a%>%
+  group_by(clip_id)%>%
+  mutate(dist2=xrot,dist1=ifelse(midline==1,NA,lag(xrot)))
+a$dist <- abs(a$dist2-a$dist1) #here x scale is going from 1.5 to -5, so distance calculated is negative. Taking the absolute value instead.
+
+FPS <- select(megakine, clip_id, fps, speedflowBL)# add the frame rate
+a <- inner_join(a, FPS)
+
+## calculate time elapsed during movement
+a<-a%>%
+  group_by(clip_id)%>%
+  mutate(frame2=frame,frame1=ifelse(midline==1,NA,lag(frame)))
+a$time <- (a$frame2-a$frame1)/a$fps
+
+# #calculate ground speed in BL/s and send it to megakine dataframe
+a$UgBL <- a$dist/a$time
+a <- a %>% group_by(clip_id) %>% top_n(1, midline) # remove rows with Nas
+arrange(a, clip_id)
+megakine$UgBL <- a$UgBL
+Multisp <- transform(Multisp, UgBL = a$UgBL)# Write UgBL values in Multisp spreadsheet
+
+# Calculate swim speed in BL/s for each clip and add it as a column in megakine dataframe
+megakine<-megakine%>%
+  group_by(clip_id)%>%
+  mutate(UsBL=UgBL+speedflowBL)
+Multisp <- transform(Multisp, UsBL = megakine$UsBL)# Write UsBL values in Multisp spreadsheet
+
+# graphic check...no strange data and much more variability in Us at Conte.
+hist(megakine$UsBL)
+boxplot(UsBL~lab, data=megakine)
+
+# compare swim speeds obtained by video from the ones obtained by the PIT system at Conte
+Contespeeds <- Multisp$UsBL_PIT
+df <- as.data.frame(Contespeeds)
+df$UsBL <- megakine$UsBL
+df$clip_id <- megakine$clip_id
+df$diff <- df$UsBL-df$Contespeeds
+hist(df$diff)
+
+# Save the multisp with the new Ug/Us columns.
+library(xlsx)
+#write.xlsx(Multisp, file = "F:/Mega kinematic all videos/3. multispecies spreadsheet/Multi-Species spreadsheet.xlsx",col.names=TRUE, append=FALSE)
+write.xlsx(Multisp, "Multi-Species spreadsheet1.xlsx")
+
+```
+
+## Stridelength
+```{r Stridelength}
+#### Stridelength (SL)####
+# Distance covered in one tail beat (stride), in BL. 
+
+# Some fish swim in still water, while others hold position in flowing water (null groundspeed), or even move forward (positive groundspeed) against a given flow velocity.
+# We need to account for the distance covered through water, and not just relative to the ground.
+# Stride length could be calculated as U * delta t, so the speed multiplied by the difference in time.
+
+# Use swimspeed in BL (UsBL) / tailbeat frequency (TBF)
+megakine<-megakine%>%
+  group_by(clip_id)%>%
+  mutate(SL=UsBL/TBF)
+
+```
+
+## Amplitude
+```{r}
+#for now work is done in df, keeping midlines uncorrupted
+df<-group_by(midlines,species,clip_id,location)
+amplitude<-summarize(df,miny=min(Y),maxy=max(Y))
+amplitude<-ungroup(amplitude)
+amplitude$amplitude<-with(amplitude,maxy-miny)
+amplitude$HalfAmp<-amplitude$amplitude/2
+amplitude$location<-as.numeric(amplitude$location)
+
+###### Plot amplitude along the body for each fish ######
+# ## Generate Amplitude Plots ####
+clipid<-unique(midlines$clip_id)
+
+for (i in as.vector(clipid))
+{
+  plot<-paste("PlotsAmplitude/",i,".png", sep="")#this tells it to place the plots in the "PlotsAmplitude" subdirectory (in the working directory)
+  plot1<-paste("PlotsAmplitude/",i,".pdf", sep="")
+ # plot2<-paste("PlotsAmplitude/",i,".emf", sep="")
+  png(plot,width=7.5, height=5, units="in",res=300)# save in .png
+  a<-subset(amplitude,clip_id==i)
+  title=paste(a$species,"Clip ID -",i,sep=" ")
+  p<-''
+  p<-ggplot(data=a,aes(x=location,y=amplitude)) +
+    geom_line()+
+    xlim(-05,205)+ylim(0,0.5)+
+    ggtitle(title)+
+    theme (panel.background = element_rect(fill = "transparent", colour = NA),
+           plot.background = element_rect(fill = "transparent", colour = NA),
+           axis.line = element_line(color = 'black'))
+  print(p)
+  #ggsave(plot,width=7.5, height=5,dpi=1200)# save in .emf
+  ggsave(plot1,width=7.5, height=5,dpi=1200)# save in .pdf
+  #ggsave(plot2,width=7.5, height=5,dpi=1200) # save in .png
+  dev.off()
+}
+
+
+####### amplitude variations...######
+# head and tail amplitude (subset of points corresponding to head/tail)
+# 
+head<-subset(amplitude, location==1:5) 
+tail<- subset(amplitude, location>195)
+
+head <- group_by(head,clip_id)
+headAmp<-summarize(head, headAmp=mean(amplitude))
+ungroup(head)
+tail <- group_by(tail,clip_id)
+tailAmp<-summarize(tail, tailAmp=mean(amplitude))
+ungroup(tail)
+
+megakine$headAmp <- headAmp$headAmp
+megakine$tailAmp <- tailAmp$tailAmp
+megakine$headtailamp <- megakine$headAmp/megakine$tailAmp # ratio head/tail amplitude
+  
+
+#location along the body of min and max amplitude
+min <- amplitude %>% arrange(clip_id, amplitude) %>%group_by(clip_id)%>%top_n(-1, amplitude)
+megakine$minAmploc <- min$location
+megakine$minAmp <- min$amplitude
+max <- amplitude %>% arrange(clip_id, amplitude) %>% group_by(clip_id) %>% top_n(1, amplitude) 
+megakine$maxAmploc <- max$location
+megakine$maxAmp <- max$amplitude
+
+# Express location along the body to 0-1
+amplitude$location2 <- amplitude$location/200
+
+# Amplitude along the body by species
+amp.species <-ggplot(amplitude,aes(x=location2,y=amplitude))+
+xlab("\n Location along the body")+ylab("\n Amplitude (BL) \n")+
+  #scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  scale_x_continuous(expand = c(0,0))+
+  facet_wrap(~species, nrow = 11)+
+  geom_pointrange(mapping = aes(colour=species),alpha=0.9,
+                  show.legend = FALSE,
+                  stat = "summary",
+                  fun.max = function(z) {quantile(z,0.75)},
+                  fun.min = function(z) {quantile(z,0.25)},
+                  fun = median, size=0.20)+
+  geom_line(aes(x = location2, y = amplitude, group=species), colour = 'grey', alpha=0.5) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(axis.title.x=element_text(size=20),
+    axis.title.y=element_text(size=20),
+    axis.text.x=element_text(size=15),
+    axis.text.y=element_text(size=15),
+    plot.title=element_text(size=25),
+    plot.margin = unit(c(1,1,1,1), "cm"),
+    strip.background =element_rect(fill="white"), strip.text = element_text(size = 20)
+  )
+#guides(color=FALSE)
+windows()
+amp.species
+ggsave(plot = amp.species, width = 18, height =28, dpi = 600, filename = "Amplitude_species.pdf")
+ggsave(plot = amp.species, width = 18, height =28, dpi = 600, filename = "FigureX4_Amplitude_species.jpg")
+
+
+
+######### Amplitude along the body by swimming mode #######
+
+# merge swimming modes
+amplitude <- merge(amplitude, Swimmingmode, by=("clip_id"))
+amplitude$species <- amplitude$species.x
+amplitude$species.y <- NULL
+amplitude$species.x <- NULL
+
+amplitude$Swimmingmode <- mapvalues(amplitude$Swimmingmode, c("a", 'sc',"c", 't'), c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform'))
+amplitude$Swimmingmode <- as.factor(amplitude$Swimmingmode)
+target <- c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform')
+require(gdata)
+#installXLSXsupport(perl=perl)
+amplitude$Swimmingmode <- reorder.factor(amplitude$Swimmingmode, new.order=target)
+
+
+levels(amplitude$Swimmingmode) <- c("Anguilliform","Sub-carangiform","Carangiform", "Thunniform") 
+
+
+
+amp<-ggplot(amplitude,aes(x=location2,y=amplitude))+
+  #geom_line(aes(color=Swimmingmode),alpha=0.7,show.legend = FALSE)+
+  #geom_line()+
+  #geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, # uses mean and confidence interval based on standard deviation
+  #position=position_dodge(0.05))+
+  #abline(mean(amplitude ~ location))+
+  xlab("\n Location along the body")+ylab("B\n Amplitude (BL) \n")+
+  scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  scale_x_continuous(expand = c(0,0))+
+  scale_y_continuous(breaks=c(0,0.10,0.20,0.30,0.40,0.50), limits =c(0,0.50))+
+  facet_wrap(~Swimmingmode, nrow = 1)+
+  geom_pointrange(mapping = aes(colour=Swimmingmode),alpha=0.9,
+                  show.legend = FALSE,
+                  stat = "summary",
+                  fun.max = function(z) {quantile(z,0.75)},
+                  fun.min = function(z) {quantile(z,0.25)},
+                  fun = median, size=0.20)+
+  geom_line(aes(x = location2, y = amplitude, group=Swimmingmode), colour = 'grey', alpha=0.5) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(#axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        axis.text.x=element_text(size=15),
+        axis.title.x=element_blank(),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 20)
+  )
+#guides(color=FALSE)
+windows()
+amp
+
+ggsave(plot = amp, width = 12, height = 6, dpi = 600, filename = "Amplitude_modes.pdf")
+
+### Descriptive statistics ###
+amplitude%>%
+  group_by(Swimmingmode) %>%
+  summarise_each(funs(n_distinct(species)))
+
+megakine%>%
+  group_by(Swimmingmode) %>%
+  summarise(median(headtailamp))
+
+megakine%>%
+  group_by(Swimmingmode) %>%
+  summarise(median(headAmp))
+
+library(dplyr)
+summary_amplitude <- 
+  amplitude %>% 
+  dplyr::group_by(Swimmingmode, location) %>% 
+  dplyr::summarize(n=n(),min=min(amplitude), max=max(amplitude), mean = mean(amplitude), median=median(amplitude),sd=sd(amplitude))
+headAmp <- arrange(headAmp, mean)
+
+headAmp <- 
+  amplitude %>% 
+  dplyr::group_by(Swimmingmode) %>% 
+  dplyr::summarize(n=n(),min=min(miny), max=max(headAmp), mean = mean(headAmp), median=median(headAmp),sd=sd(headAmp))
+headAmp <- arrange(headAmp, mean)
+
+tailAmp <- 
+  megakine %>% 
+  group_by(Swimmingmode) %>% 
+  summarize(n=n(),min=min(tailAmp), max=max(tailAmp), mean = mean(tailAmp), median=median(tailAmp),sd=sd(tailAmp))
+tailAmp <- arrange(headAmp, mean)
+
+summary(megakine$headAmp)
+summary(megakine$tailAmp)
+
+
+### Synthetize amplitude data for all species
+
+amplitude_species <- amplitude %>% 
+  group_by(species, location) %>%
+  summarise(min = min(amplitude, na.rm = TRUE), max = max(amplitude, na.rm = TRUE), mean = mean(amplitude, na.rm = TRUE), median = median(amplitude, na.rm = TRUE), sd=sd(amplitude, na.rm = TRUE), se=sd(amplitude)/sqrt(sum(!is.na(amplitude))))
+
+mode <- Swimmingmode %>%
+  group_by(species) %>%
+  summarise(mode = first(Swimmingmode))
+
+amplitude_species <- merge(amplitude_species, mode, by=("species"))
+amplitude_species <- arrange(amplitude_species, mode)
+
+
+# regression models by swimming modes
+amplitude_species %>% 
+  group_by(mode) %>% 
+  do({
+    mod = lm(mean ~ location, data = .)
+    data.frame(Intercept = coef(mod)[1],
+               Slope = coef(mod)[2])
+  })
+
+
+amplitude_species_reduced <- subset(amplitude_species, location%in% c(1,20,40,60, 80, 100, 120, 140, 160, 180, 200))
+amplitude_species_reduced <- merge(amplitude_species_reduced, mode, by=("species"))
+
+
+# Plot mean amplitude along the body by species
+library(RColorBrewer)
+
+p<-ggplot(amplitude_species_reduced,aes(x=location,y=mean))+
+  geom_point(aes(color=mode))+
+  geom_line()+
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, # uses mean and confidence interval based on standard deviation
+                position=position_dodge(0.05))+
+  #stat_smooth()+ggtitle("Amplitude along the body")+ # uses mean and confidence interval based on standard deviation
+  xlab("Location along the body")+ylab("Amplitude (BL)")+
+  scale_color_manual(name="Swimming mode",values=c("#A50026","#FDAE61" , "#313695", "#74ADD1"))+
+  facet_wrap(~species)+
+  theme(axis.title.x=element_text(size=10),
+        axis.title.y=element_text(size=10),
+        axis.text.x=element_text(size=7),
+        axis.text.y=element_text(size=7),
+        plot.title=element_text(size=8))+
+  guides(color=FALSE)
+windows()
+p
+ggsave(plot = p, width = 8, height = 5, dpi = 600, filename = "Amplitude_species.pdf")
+
+
+# save amplitudes files in .csv
+write.csv(amplitude, file = "F:/Mega kinematic all videos/Analysis/Amplitude.csv")
+write.xlsx(Multisp, "Amplitude_species_reduced.xlsx")
+```
+
+## Phase
+
+Phase data come from the sine wave model fitted with Matlab code. Imported here so we can plot them.
+```{r Phase}
+# Import the data on phase along the body
+library(readr)
+phase <- read_csv("F:/Mega kinematic all videos/Analysis/phaseenvelope/elsa_phaseEnv.csv", col_names = FALSE) 
+id <- read_csv("F:/Mega kinematic all videos/Analysis/phaseenvelope/elsa_clipID.csv", col_names = FALSE)
+
+# merge phase with id
+id$clip_id <- id$X1
+id$X1 <- NULL
+phase$clip_id <- id$clip_id
+
+# tidy up the dataframe vertically by clip_id, location along the body and phase values.
+library(tidyr)
+phase2 <- gather(phase, "location","phase",1:200)
+phase2 <- arrange(phase2, clip_id)
+phase2$location <- as.integer(gsub('[a-zA-Z]', '', phase2$location))
+
+# make phase value positive
+phase2$phase <- phase2$phase*-1
+phase2$location2 <- phase2$location/200
+
+# add swimming modes
+phase2 <- merge(phase2, Swimmingmode)
+
+# Plot phase by swimming mode
+# 
+phase2$Swimmingmode <- mapvalues(phase2$Swimmingmode, c("a", 'sc',"c", 't'), c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform'))
+phase2$Swimmingmode <- as.factor(phase2$Swimmingmode)
+target <- c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform')
+require(gdata)
+#installXLSXsupport(perl=perl)
+phase2$Swimmingmode <- reorder.factor(phase2$Swimmingmode, new.order=target)
+
+levels(phase2$Swimmingmode) <- c("Anguilliform","Sub-carangiform","Carangiform", "Thunniform") 
+
+
+phase<-ggplot(phase2,aes(x=location2,y=phase))+
+  #geom_line(aes(color=Swimmingmode),alpha=0.7,show.legend = FALSE)+
+  #geom_line()+
+  #geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, # uses mean and confidence interval based on standard deviation
+  #position=position_dodge(0.05))+
+  #abline(mean(amplitude ~ location))+
+  xlab("\n Location along the body")+ylab("C\n Phase (rad) \n")+
+  scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  scale_x_continuous(expand = c(0,0))+
+  #scale_y_continuous(breaks=c(0,2,4,6,8), limits =c(-0.5,10))+
+  facet_wrap(~Swimmingmode, nrow = 1)+
+  theme(
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+  )+
+  geom_pointrange(mapping = aes(colour=Swimmingmode),alpha=0.9,
+                  show.legend = FALSE,
+                  stat = "summary",
+                  fun.max = function(z) {quantile(z,0.75)},
+                  fun.min = function(z) {quantile(z,0.25)},
+                  fun = median, size=0.20)+
+  geom_line(aes(x = location2, y = phase, group=Swimmingmode), colour = 'grey', alpha=0.5) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(
+    axis.title.y=element_text(size=20),
+    axis.text.x=element_text(size=15),
+    axis.title.x=element_blank(),
+    axis.text.y=element_text(size=15),
+    plot.title=element_text(size=25),
+    plot.margin = unit(c(1,1,1,1), "cm"),
+    strip.background =element_rect(fill="white"), strip.text = element_text(size = 20)
+  )
+#guides(color=FALSE)
+windows()
+phase
+
+
+ggsave(plot = phase, width = 12, height = 6, dpi = 600, filename = "Phase_modes.pdf")
+
+# save phase dataset
+write_xlsx(phase2,'Phase.xlsx')
+
+```
+
+## Reynolds & Strouhal numbers
+```{r Re & St}
+
+#calculate swim speed (ground speed + flow speed) in m/s
+#megakine$U <- (megakine$speedflowBL*megakine$TL)/100
+megakine$U <- (megakine$UsBL*megakine$TL)/100
+#Reynold's, assuming U and L in m and a kinematic viscosity (v) of 1 mm2/s: U*TL/v
+megakine$Re <- (megakine$U*(megakine$TL/100)/0.000001)
+
+#Strouhal number, calculated using tailbeat frequency (f), tail amplitude (A) and swim speed (U): fA/U
+#amplitude is converted in m
+megakine$tailAmp.m <- (megakine$tailAmp*megakine$TL)/100
+megakine$St <- (megakine$TBF*megakine$tailAmp.m)/megakine$U 
+
+summary(megakine$Re)
+summary(megakine$St)
+```
+
+## Propulsive wave
+```{r Propulsive wave}
+#### Body wave  ####
+ 
+# During undulatory swimming, a wave is propagating down the body of the fish. The speed and length of the propulsive wave was measured by identifying bending moments along the fish's body. This method identify the location of maximal excursion on the y axis (peaks) for each midline and has extra code to pick the minimum location of the wavepeak that is posterior to the wavepeak on the previous midline. 
+
+# One tailbeat cycle is considered here, with 10-17 midlines digitized at equal interval. Each midline represent a proportion of the tailbeat cycle. 
+# The following rules were considered:
+# 1) One wave is considered for the tailbeat
+# 2) initial peak needs to be anterior of 75% of the body length of the fish.
+# 3) the wave always moves in an anterior-posterior direction (wave terminates at the tip of tail at the end of the tailbeat). 
+#     Consequently, The location of the peaks along the body should increase linearly with midline number.
+
+#Due to the tunas swimming in a circular tank, and perhaps some random error during the digitizing (image distortion or smoothing in CurveMapper), some midlines present 'problematic' peaks. These were filtered out using 2 methods:
+#1) visual assessment of the wavemodels plots (deviation from the slope of the wave regression model fitted)
+#2) wave models with R2 < 0.9
+#
+# Details on the filtering are available in the documents: "Notes on kinematics Code 191005.docx" & "TR_Clip_YCenterClip_NoFilter"
+
+## Wavespeed and wavelength calculations:
+
+# Having characterized the movement of the propulsive wave down the body, the speed of the wave was quantified by fitting a regression through the peaks following the standard formula:
+
+#             L ^=a+bP_TB
+
+#Where L ^ (location of the wave peak along the body in BL) is described by an intercept (a in BL) and a slope (b (units are BL/tailbeat)) times PTB (the proportion of a tailbeat covered in a single midline).
+
+#TCS: Note that this assumed that each clip represented one full tailbeat.  Instead it represents a fraction of a tailbeat (usually close to 1).  This Formulas have been adjusted to account for actual frames, with each frame representing a fixed proportion of a tailbeat.  This allows midlines to be calculated on non-uniform intervals
+
+# The slope (b) of the relationship represents the speed of the wave passing down the body in a single tailbeat (BL/TB) which is also the units for wavelength (BL) because we consider only the distance a wave passes in 1 tailbeat so we're saying Slope/1=Wavelength.
+# or  Wavelength = wavespeed *time (1) 
+
+
+
+## Step 1 - Generate plots for each midline ##
+# a " midlineplots" folder needs to be created in the working directory.
+#by clicking through these it is easy to see which plots produce good waveforms and which do not
+
+
+clipid<-unique(select(midlines,clip_id))
+
+for (i in as.vector(clipid$clip_id))
+{
+  plot<-paste("midlineplots/",i,".png", sep="")
+  png(plot,width=14, height=5, units="in",res=300)
+  a<-subset(midlines,clip_id==i)
+  #center midlines to help visualize plots
+  a<-a%>%
+    group_by(clip_id)%>%
+    mutate(Ycenter=(Y-mean(Y)))%>%#Note this is just for plotting at this point so we can see the midlines on the same scale
+    ungroup()
+  title=paste(a$species,"Clip ID -",i,sep=" ")
+  p<-''
+  p<-ggplot(data=a,aes(x=X,y=Ycenter)) +
+    geom_line()+
+    xlim(0,1)+ylim(-0.3, 0.3)+
+    facet_grid(.~midline)+
+    ggtitle(title)
+  # theme (panel.background = element_rect(fill = "transparent", colour = NA),
+  #        plot.background = element_rect(fill = "transparent", colour = NA),
+  #        axis.line = element_line(color = 'black'))
+  print(p)
+  dev.off()
+}
+
+
+library(dplyr)
+df<-midlines
+
+## Step 2 - use a pair of nested loops to recursively calculate the location of the peaks, requiring that the wave always move in an anterior-posterior direction
+
+
+#Use lead and lag to identify local maximum  and minimum in y (peaks and troughs)
+df<-df%>%
+  group_by(clip_id,midline)%>%
+  mutate(lagy=lag(Y),leady=lead(Y))%>%
+  ungroup()
+
+df$dY1<-df$Y-df$lagy
+df$dY2<-df$Y-df$leady
+
+df$localpeak<-ifelse(df$dY1>0&df$dY2>0,1,ifelse(df$dY1<0&df$dY2<0,-1,0))
+
+YPeak<-df[df$localpeak==1,]
+YTrough<-df[df$localpeak==-1,]
+
+YPeak<-na.omit(YPeak)
+YTrough<-na.omit(YTrough)
+
+
+##Track wave peaks as they move down the body ##
+##
+a<-YPeak
+
+#TCS:  Replaced 'midline' throughouth peakloc with 'frame'.  This will allow us to directly assign proportion of the tailbeat to each midline (which we will no longer use because frame is better)
+clipid<-unique(select(a,clip_id))
+peakloc<-NULL
+for (i in as.vector(clipid$clip_id)){
+  dfi<-a[a$clip_id==i,]#Temporary dataframe based on clip # i
+  pl<-min(subset(dfi$location,dfi$frame==min(dfi$frame)))#This grabs the first frame--they don't all start at 1
+  inc<-1
+  while (pl>150){#This addresses clips 43 and also 62 among others where first peaks are at tail
+    inc<-inc+1
+    dfi<-dfi[inc:nrow(dfi),]#This resets dfi to exclude clips where the peak starts at the tail
+    pl<-min(subset(dfi$location,dfi$frame==min(dfi$frame)))#This grabs the first frame--they don't all start at 1 (repeat from above)
+  }
+  peakloci<-NULL#new dataframe to capture peakloc as it travels down the body
+  k<-unique(select(dfi,frame))#Sometimes there's more than one peak so we need to find and fix that
+  for (j in as.vector(k$frame)){
+    dfj<-dfi[dfi$frame==j,]
+    pl<-ifelse(
+      j==min(k$frame),pl,ifelse(
+        is.infinite(min(subset(dfj$location,dfj$location>pl))),
+        pl,
+        (min(subset(dfj$location,dfj$location>pl)))))#This captures peaks that move anteriorly and sets them equal to previous peak...later we will remove these but we need them to find the next peak
+    ijpl<-cbind(i,j,pl)
+    peakloci<-rbind(peakloci,ijpl)
+  }
+  peakloc<-rbind(peakloc,peakloci)
+}
+#This produces warnings because sometimes there are no valid observations on a given frame  This should not be a problem.
+peakloc<-data.frame(peakloc)
+peakloc<-rename(peakloc,clip_id=i,frame=j,location=pl)
+
+#Now delete those places where we forced the peak to stay stationary instead of moving backward.
+peakloc<-peakloc%>%
+  group_by(clip_id)%>%
+  mutate(flag=ifelse(row_number()==1,0,
+                     ifelse(location==lag(location),1,0)))%>%
+  ungroup()
+
+peakloc<-peakloc[peakloc$flag==0,]
+peakloc<-data.frame(peakloc)
+
+#Note that up to this  point the peak location was calculated based on 'position' and 'midline'. (#TCS UPDATE 200427: changed from midline to frame--see comments above)  For models though it is best to convert these units into body lengths and tailbeats such that position/200 is the location in body lengths and PropTB representsthe proportion of a tailbeat. PropTB=midline/nmid (where nmid is the number of midlines in a clip).
+#TCS: This is an error.  nmid is the number of digitized midlines, but we should really adjust this for the proportion of the total tailbeat that is represented by a given midline.  To get that we need to go back to the original framenumber and the number of frames in a tailbeat.  The code has now been modified to reflect this change
+
+# Midcount<-midlines%>%
+#   group_by(clip_id)%>%
+#   mutate(nmid=(max(midline)-min(midline)+1))%>%
+#   ungroup()
+# Midcount<-unique(select(Midcount,clip_id,species,nmid))
+
+#TCS: Adding lines here to bring in Prop_TB as derived from the original selection of midlines--note that some midlines beat have slighly <1 tailbeat (90% +)
+
+#Copying from above, but now we are going to use frame
+Midcount<-midlines%>%
+  group_by(clip_id)%>%
+  mutate(maxframe=max(frame),minframe=min(frame),nframes=(max(frame)-min(frame)+1))%>%
+  ungroup()
+Midcount<-unique(select(Midcount,clip_id,species,minframe,maxframe,nframes))
+
+#Combine Midcount with Multisp to get proportion of a tailbeat
+proptbadj<-select(Multisp,clip_id,totalframes)
+Midcount<-inner_join(Midcount,proptbadj)
+rm(proptbadj)
+Midcount$Prop_TB<-Midcount$nframes/Midcount$totalframes
+# Now check against Dylans spreadsheet
+# Note that this will fail to detect the double tailbeat for 144
+# Dylans<-read.csv("Framecheck.csv")
+# plotter<-inner_join(Midcount,Dylans)
+# plot(plotter$Prop_TB~
+#        as.numeric(as.character(plotter$percent_Tailbeat_digitized)))
+
+peakloc<-inner_join(peakloc,Midcount)
+
+
+#Fix any fish that don't start on frame 1 (there is only one: 115)
+peakloc<-peakloc%>%
+  mutate(frame=frame-minframe+1)
+
+peakloc<-peakloc%>%
+  mutate(PropTB=frame/totalframes,PropLoc=location/200)
+
+  
+#TCS: Note the proportion of the tailbeat is now calculated directly from the frame number
+
+#Plot wavespeed by fitting a regression model through the y maxima going down the body
+#(actually location of peak vs. midline number--the slope is the speed). Extrac intercept, slope & R2
+
+wavemodels<-data.frame(matrix(ncol=6))
+names(wavemodels)=c("clip_id","Intercept","SE_Intercept","Slope","SE_Slope","R2")
+
+clipid<-data.frame(unique(select(peakloc,clip_id)))
+for (i in as.vector(clipid$clip_id)){
+  plot<-paste("wavespeed/",i,".png", sep="")#Where to put the plots
+  png(plot,width=7.5, height=5, units="in",res=300)# save in .png
+  a<-subset(peakloc,clip_id==i)
+  title=paste("Clip ID -",i,sep=" ")
+  p<-''
+  modeli<-lm(PropLoc~PropTB,data=a)#fit regressions for plotting and save to calculate wavelength
+  p<-ggplot(data=a,aes(x=PropTB,y=PropLoc)) +
+    geom_line()+ geom_point()+
+    geom_line(aes(y=fitted(modeli)),color='blue')+
+    xlim(0,1)+ylim(-0.02,1.02)+
+    ggtitle(title)#+
+  print(p)
+  sum.lmi<-summary(modeli)
+  Intercept <- sum.lmi$coef[1,1]   #intercept
+  SE_Intercept<- sum.lmi$coef[1,2]
+  Slope <- sum.lmi$coef[2,1]    #slope (which is all we really care about)
+  SE_Slope<- sum.lmi$coef[2,2]
+  R2 <- sum.lmi$r.squared  
+  wavemodels<-rbind(wavemodels,c(i,Intercept,SE_Intercept,Slope,SE_Slope,R2))
+  dev.off()
+}
+
+wavemodels<-wavemodels[!is.na(wavemodels$clip_id),]
+wavemodels <- arrange(wavemodels, R2)
+
+
+#Join to wavemodels and calculate wavelength
+wavemodels<-inner_join(wavemodels,Midcount)
+
+wavemodels<-select(wavemodels,clip_id,Intercept,SE_Intercept,Slope,SE_Slope,R2,species,nframes,totalframes,Prop_TB)
+hist(wavemodels$Slope)
+
+# Save unfiltered wave models
+library(writexl)
+write_xlsx(wavemodels,'TR_Clip_YCenterClip_Nofilter.xlsx')
+
+# Step 3 - By looking at the wave models' slopes and R2, identify and remove problematic midlines.
+
+# Removed midlines represent 1% of the total number of midlines. 
+a<-YPeak
+
+a<-a[!(a$clip_id==1&a$midline>7),]
+a<-a[!(a$clip_id==7&a$midline<3),]
+a<-a[!(a$clip_id==27&a$midline==12),]
+a<-a[!(a$clip_id==50&a$midline==1),]
+a<-a[!(a$clip_id==65&a$midline<4),]
+a<-a[!(a$clip_id==67&a$midline<7),]
+a<-a[!(a$clip_id==71&a$midline<5),]
+a<-a[!(a$clip_id==72&a$midline<4),]
+a<-a[!(a$clip_id==86&a$midline<4),]
+a<-a[!(a$clip_id==88&a$midline<5),]
+
+a<-a[!(a$clip_id==130&a$midline>7),]
+a<-a[!(a$clip_id==133&a$midline<7),]
+a<-a[!(a$clip_id==142&a$midline<5),]
+a<-a[!(a$clip_id==154&a$midline<11),]
+a<-a[!(a$clip_id==234&a$midline<3),]
+a<-a[!(a$clip_id==245&a$midline<4),]
+a<-a[!(a$clip_id==247&a$midline==1),]
+a<-a[!(a$clip_id==249&a$midline<4),]
+a<-a[!(a$clip_id==254&a$midline<7),]
+
+
+## redo step 2 & 3
+##Track wave peaks as they move down the body ##
+##
+
+clipid<-unique(select(a,clip_id))
+peakloc<-NULL
+for (i in as.vector(clipid$clip_id)){
+  dfi<-a[a$clip_id==i,]#Temporary dataframe based on clip # i
+  pl<-min(subset(dfi$location,dfi$frame==min(dfi$frame)))#This grabs the first frame--they don't all start at 1
+  inc<-1
+  while (pl>150){#This addresses clips 43 and also 62 among others where first peaks are at tail
+    inc<-inc+1
+    dfi<-dfi[inc:nrow(dfi),]#This resets dfi to exclude clips where the peak starts at the tail
+    pl<-min(subset(dfi$location,dfi$frame==min(dfi$frame)))#This grabs the first frame--they don't all start at 1 (repeat from above)
+  }
+  peakloci<-NULL#new dataframe to capture peakloc as it travels down the body
+  k<-unique(select(dfi,frame))#Sometimes there's more than one peak so we need to find and fix that
+  for (j in as.vector(k$frame)){
+    dfj<-dfi[dfi$frame==j,]
+    pl<-ifelse(
+      j==min(k$frame),pl,ifelse(
+        is.infinite(min(subset(dfj$location,dfj$location>pl))),
+        pl,
+        (min(subset(dfj$location,dfj$location>pl)))))#This captures peaks that move anteriorly and sets them equal to previous peak...later we will remove these but we need them to find the next peak
+    ijpl<-cbind(i,j,pl)
+    peakloci<-rbind(peakloci,ijpl)
+  }
+  peakloc<-rbind(peakloc,peakloci)
+}
+#This produces warnings because sometimes there are no valid observations on a given frame  This should not be a problem.
+peakloc<-data.frame(peakloc)
+peakloc<-rename(peakloc,clip_id=i,frame=j,location=pl)
+
+#Now delete those places where we forced the peak to stay stationary instead of moving backward.
+peakloc<-peakloc%>%
+  group_by(clip_id)%>%
+  mutate(flag=ifelse(row_number()==1,0,
+                     ifelse(location==lag(location),1,0)))%>%
+  ungroup()
+
+peakloc<-peakloc[peakloc$flag==0,]
+peakloc<-data.frame(peakloc)
+
+#Get count of midlines used to describe a full tailbeat (they vary; each midline represents a proportion of a full tailbeat cycle, and this proportion varies depending on the number of midlines required to describe a full tailbeat).
+# Note also that we get the counts of midlines from midlines, not peakloc, because peakloc has had some midlines removed.
+
+# Delete this because of the PropTB problem
+# Midcount<-midlines%>%
+#   group_by(clip_id)%>%
+#   mutate(nmid=(max(midline)-min(midline)+1))%>%
+#   ungroup()
+# Midcount<-unique(select(Midcount,clip_id,species,nmid))
+
+Midcount<-midlines%>%
+  group_by(clip_id)%>%
+  mutate(maxframe=max(frame),minframe=min(frame),nframes=(max(frame)-min(frame)+1))%>%
+  ungroup()
+Midcount<-unique(select(Midcount,clip_id,species,minframe,maxframe,nframes))
+
+proptbadj<-select(Multisp,clip_id,totalframes)
+Midcount<-inner_join(Midcount,proptbadj)
+rm(proptbadj)
+Midcount$Prop_TB<-Midcount$nframes/Midcount$totalframes
+
+peakloc<-inner_join(peakloc,Midcount)
+
+#Fix any fish that don't start on frame 1 (there is only one: 115)
+peakloc<-peakloc%>%
+  mutate(PropTB=frame/totalframes,PropLoc=location/200)
+
+
+  
+#Plot wavespeed by fitting a regression model through the y maxima going down the body
+#(actually location of peak vs. midline number--the slope is the speed). Extrac intercept, slope & R2
+
+wavemodelsAdj<-data.frame(matrix(ncol=6))
+names(wavemodelsAdj)=c("clip_id","Intercept","SE_Intercept","Slope","SE_Slope","R2")
+
+clipid<-data.frame(unique(select(peakloc,clip_id)))
+for (i in as.vector(clipid$clip_id)){
+  plot<-paste("WavespeedAdj/",i,".png", sep="")#Where to put the plots
+  png(plot,width=7.5, height=5, units="in",res=300)# save in .png
+  a<-subset(peakloc,clip_id==i)
+  title=paste("Clip ID -",i,sep=" ")
+  p<-''
+  modeli<-lm(PropLoc~PropTB,data=a)#fit regressions for plotting and save to calculate wavelength
+  p<-ggplot(data=a,aes(x=PropTB,y=PropLoc)) +
+    geom_line()+ geom_point()+
+    geom_line(aes(y=fitted(modeli)),color='blue')+
+    xlim(0,1)+ylim(-0.02,1.02)+
+    ggtitle(title)#+
+  print(p)
+  sum.lmi<-summary(modeli)
+  Intercept <- sum.lmi$coef[1,1]   #intercept
+  SE_Intercept<- sum.lmi$coef[1,2]
+  Slope <- sum.lmi$coef[2,1]    #slope (which is all we really care about)
+  SE_Slope<- sum.lmi$coef[2,2]
+  R2 <- sum.lmi$r.squared  
+  wavemodelsAdj<-rbind(wavemodelsAdj,c(i,Intercept,SE_Intercept,Slope,SE_Slope,R2))
+  dev.off()
+}
+
+
+#Join to wavemodels and calculate wavelength
+wavemodelsAdj<-inner_join(wavemodelsAdj,Midcount)
+
+wavemodelsAdj<-select(wavemodelsAdj,clip_id,Intercept,SE_Intercept,Slope,SE_Slope,R2,species,nframes,totalframes,Prop_TB)
+wavemodelsAdj$wavespeed <- wavemodelsAdj$Slope #Wavespeed in BL/TB
+wavemodelsAdj$wavelength <- wavemodelsAdj$wavespeed*1 # for time = 1 (tailbeat)
+hist(wavemodelsAdj$wavelength)
+
+# Send the wavespeed and wavelength to the megakine dataframe.
+wavelength <- select(wavemodelsAdj,clip_id, wavespeed, wavelength)
+megakine <- left_join(megakine,wavelength, all=TRUE)
+
+# (BL/TB)*(TB/s)=BL/s
+megakine$wavespeedBLS<-megakine$wavelength*megakine$TBF#Wavespeed in BL/s
+h
+
+# Violin plot showing distribution of wavelength per swimming mode
+
+megakine$Swimmingmode <- mapvalues(megakine$Swimmingmode, c("a", 'sc',"c", 't'), c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform'))
+megakine$Swimmingmode <- as.factor(megakine$Swimmingmode)
+target <- c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform')
+require(gdata)
+#installXLSXsupport(perl=perl)
+megakine$Swimmingmode <- reorder.factor(megakine$Swimmingmode, new.order=target)
+levels(megakine$Swimmingmode) <- c("Anguilliform","Sub-carangiform","Carangiform", "Thunniform") 
+
+wavelength <- ggplot(megakine, aes(x=Swimmingmode, y=wavelength, color=Swimmingmode)) + 
+  geom_violin(trim=TRUE, size=2, width=0.5)+ 
+  geom_boxplot(width=0.1, size=1)+
+  geom_jitter(height = 0, width = 0.1, color="grey")+
+  xlab("\n Swimming mode")+
+  ylab("A\n Wavelength (BL)\n")+
+   scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  theme(legend.position="none")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        axis.text.x=element_text(size=15),
+        #axis.title.x=element_blank(),
+        #axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 25)
+  )
+windows()
+wavelength
+ggsave(plot = wavelength, width = 12, height = 6, dpi = 600, filename = "Wavelength_modes.pdf")
+
+
+#p + stat_summary(fun=median, geom="point", size=2, color="red")
+#p + coord_flip()
+
+# Supplemental figure on number of waves in one tailbeat, wavelength & wavespeed
+
+megakine$Swimmingmode <- mapvalues(megakine$Swimmingmode, c("a", 'sc',"c", 't'), c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform'))
+megakine$Swimmingmode <- as.factor(megakine$Swimmingmode)
+target <- c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform')
+require(gdata)
+#installXLSXsupport(perl=perl)
+megakine$Swimmingmode <- reorder.factor(megakine$Swimmingmode, new.order=target)
+levels(megakine$Swimmingmode) <- c("Anguilliform","Sub-carangiform","Carangiform", "Thunniform") 
+
+nbwave <- ggplot(megakine, aes(x=Swimmingmode, y=nbwave, color=Swimmingmode)) + 
+  geom_violin(trim=TRUE, size=2, width=0.5)+ 
+  geom_boxplot(width=0.1, size=1)+
+  geom_jitter(height = 0, width = 0.1, color="grey")+
+  #xlab("\n Swimming mode")+
+  ylab("A\n Number of waves \n")+
+  scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  scale_y_continuous(breaks=c(0.5,1,1.5,2), limits =c(0.5,2))+
+  theme(legend.position="none")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(#axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        #axis.text.x=element_text(size=15),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        #axis.ticks.x=element_blank(),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 25)
+  )
+windows()
+nbwave
+  
+  
+wavelength <- ggplot(megakine, aes(x=Swimmingmode, y=wavelength, color=Swimmingmode)) + 
+  geom_violin(trim=TRUE, size=2, width=0.5)+ 
+  geom_boxplot(width=0.1, size=1)+
+  geom_jitter(height = 0, width = 0.1, color="grey")+
+  xlab("\n Swimming mode")+
+  ylab("A\n Wavelength (BL)\n")+
+  scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  scale_y_continuous(breaks=c(0.5,1,1.5), limits =c(0.5,1.5))+
+  theme(legend.position="none")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        axis.text.x=element_text(size=15),
+        #axis.title.x=element_blank(),
+        #axis.text.x=element_blank(),
+        #axis.ticks.x=element_blank(),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 25)
+  )
+windows()
+wavelength
+
+wavespeed <- ggplot(megakine, aes(x=Swimmingmode, y=wavespeedBLS, color=Swimmingmode)) + 
+  geom_violin(trim=TRUE, size=2, width=0.5)+ 
+  geom_boxplot(width=0.1, size=1)+
+  geom_jitter(height = 0, width = 0.1, color="grey")+
+  xlab("\n Swimming mode")+
+  ylab("C\n Wavespeed (BL/s)\n")+
+  scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  theme(legend.position="none")+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        axis.text.x=element_text(size=18),
+        #axis.title.x=element_blank(),
+        #axis.text.x=element_blank(),
+        #axis.ticks.x=element_blank(),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 25)
+  )
+windows()
+wavespeed
+
+windows()
+library(gridExtra)
+multi.wave <- grid.arrange(nbwave, wavelength, wavespeed, nrow=3,heights=c(3,3,5))
+ggsave(plot= multi.wave, width = 10, height = 12, dpi = 600, filename = "wave_plots.pdf")
+ggsave(plot= multi.wave, width = 10, height = 12, dpi = 600, filename = "FigureX5_WavePlots.jpg")
+
+#Dimensionless slip parameter
+megakine$slip<-megakine$UsBL/megakine$wavespeedBLS
+hist(megakine$slip)
+
+
+# Save filtered wave models
+library(writexl)
+write_xlsx(wavemodelsAdj,'TR_Clip_YCenterClip.xlsx')
+#Save to xl to work on slip parameter and data QC
+write_xlsx(select(megakine,clip_id,speedflowBL,speedflow_m,fps,TL,TBF,Swimmingmode,species=species.y,UgBL,UsBL,wavespeed,wavelength,slip),'Slip.xlsx')
+
+```
+
+## Curvature (k)
+```{r Curvature}
+# Curvature of 2D plane curves (geometrical sense). Inverse of the radius of curvature. Need 3 points [x,y].
+# Calculate the curvature along the body of the fish for each digitized midline of 1 tailbeat. We have 200 locations along the body.
+# K is calculated for each location along the body, considering a distance of 10 locations (5 anterior, 5 posterior).
+# K formula: 
+# A. SUMSQ(X2-X1, Y2-Y1)^0.5
+# B. SUMSQ(X3-X2, Y3-Y2)^0.5
+# C. SUMSQ(X3-X1, Y3-Y1)^0.5
+# D. (A+B+C)/2
+# E.(A*B*C)/(4*(D*(D-A)*(D-B)*(D-C))^0.5)
+# F. 1/E
+# 
+lagno<-5
+
+df.curv<-midlines%>%
+  group_by(clip_id, midline)%>%
+  mutate(LagX=lag(X,lagno),LagY=lag(Y,lagno),LeadX=lead(X,lagno),LeadY=lead(Y,lagno),
+         A=((X-LagX)^2+(Y-LagY)^2)^0.5,
+         B=((LeadX-X)^2+(LeadY-Y)^2)^0.5,
+         C=((LeadX-LagX)^2+(LeadY-LagY)^2)^0.5)%>%
+  mutate(D=(A+B+C)/2)%>%
+  mutate(Radius=(A*B*C)/(4*(D*(D-A)*(D-B)*(D-C))^0.5))%>%
+  mutate(Curv=1/Radius)%>%
+  ungroup()
+windows()
+with(df.curv,plot(Curv~location))
+summary(df.curv$Curv)
+
+# Find maximum curvature and its location along the body for each midline
+max.curv <- df.curv%>%
+ group_by(clip_id, location) %>% slice(which.max(Curv))
+with(max.curv,plot(Curv~location))
+
+
+head <- group_by(head,clip_id)
+headAmp<-summarize(head, headAmp=mean(amplitude))
+ungroup(head)
+
+# describe curvature at the tail across species
+tail<- subset(df.curv, location > 185 & location <195)
+tailCurv <- tail %>% group_by(clip_id)%>% 
+summarize(median=median(Curv),q25 = quantile(Curv, probs = .25), q75 = quantile(Curv, probs = .75))
+summary(tailCurv)
+ungroup(tail$Curv)
+tail.curv <- subset(tail,Curv<12)
+hist(tail.curv$Curv)
+
+# and by a-priori swimming modes
+tailCurv <- merge(tailCurv, Swimmingmode, by=("clip_id"))
+tailCurv$species <- NULL
+tailCurv %>% group_by(Swimmingmode)%>% 
+  summarize(median=median(median),q25 = quantile(q25, probs = .25), q75 = quantile(q75, probs = .75))
+
+tailCurv <- tail %>% group_by(clip_id)%>% 
+  summarize(median=median(Curv),q25 = quantile(Curv, probs = .25), q75 = quantile(Curv, probs = .75))
+
+
+# merge swimming modes
+df.curv <- merge(df.curv, Swimmingmode, by=("clip_id"))
+df.curv$species <- amplitude$species.x
+df.curv$species.y <- NULL
+df.curv$species.x <- NULL
+
+
+####### Plot curvature along the body by swimming mode  #######
+df.curv$Swimmingmode <- mapvalues(df.curv$Swimmingmode, c("a", 'sc',"c", 't'), c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform'))
+df.curv$Swimmingmode <- as.factor(df.curv$Swimmingmode)
+target <- c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform')
+require(gdata)
+#installXLSXsupport(perl=perl)
+df.curv$Swimmingmode <- reorder.factor(df.curv$Swimmingmode, new.order=target)
+levels(df.curv$Swimmingmode) <- c("Anguilliform","Sub-carangiform","Carangiform", "Thunniform") 
+
+# express location along the body as 0-1
+df.curv$location2 <- df.curv$location/200
+
+curv<-ggplot(df.curv,aes(x=location2,y=Curv))+
+  #geom_line(aes(color=Swimmingmode),alpha=0.7,show.legend = FALSE)+
+  #geom_line()+
+  #geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, # uses mean and confidence interval based on standard deviation
+  #position=position_dodge(0.05))+
+  #abline(mean(amplitude ~ location))+
+  xlab("\n Location along the body")+
+  ylab(expression(atop("D",paste("Curvature (",BL^{-1},")"),atop)))+
+  scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  scale_x_continuous(expand = c(0,0))+
+  #scale_y_continuous(limits=c(0, 40))+
+  scale_y_log10(limits=c(0.3, 40), breaks=c(0.3,1,3,10,30))+
+  facet_wrap(~Swimmingmode, nrow = 1)+
+  theme(
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+  )+
+  geom_line(aes(x = location2, y = Curv, group=Swimmingmode), colour = 'grey', alpha=0.4) + 
+    geom_pointrange(mapping = aes(colour=Swimmingmode),alpha=0.8,
+                  show.legend = FALSE,
+                  stat = "summary",
+                  fun.max = function(z) {quantile(z,0.75)},
+                  fun.min = function(z) {quantile(z,0.25)},
+                  fun = median, size=0.20)+
+  #geom_line(aes(x = location2, y = Curv, group=Swimmingmode), colour = 'grey', alpha=0.5) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        axis.text.x=element_text(size=15),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 20)
+  )
+#guides(color=FALSE)
+windows()
+curv
+
+ggsave(plot = curv, width = 12, height = 6, dpi = 600, filename = "Curvature_modes_log.pdf")
+
+
+# Find the maxima and its location for each tailbeat
+max.curv2 <- max.curv%>%
+  group_by(clip_id) %>% slice(which.max(Curv))
+windows()
+with(max.curv2,plot(Curv~location))
+summary(max.curv2$Curv)
+# send the values in the megakine dataset
+maxcurv <- select(max.curv2, "clip_id", "midline","location", "Radius", "Curv")
+maxcurv <- rename(maxcurv, maxcurvloc=location, maxcurvmidline=midline, maxradius=Radius,maxcurv=Curv)
+megakine <- inner_join(maxcurv, megakine)
+
+# FYI, summarize the max curvature values by clip_id (max, min, mean, median, SD)
+summarize.curv <- max.curv%>%
+  group_by(clip_id)%>% 
+  summarise(Mean=mean(Curv), Max=max(Curv), Min=min(Curv), Median=median(Curv), Std=sd(Curv))
+
+####### Plot curvature along the body for the four model species only ######
+df.curv.model <- subset(df.curv, species==c('Anguilla_rostrata', 'Salvelinus_fontinalis', 'Scomber_scombrus', 'Thunnus_albacares'))
+
+# express location along the body as 0-1
+df.curv.model$location2 <- df.curv.model$location/200
+
+curv.model<-ggplot(df.curv.model,aes(x=location2,y=Curv))+
+  xlab("\n Location along the body")+
+  ylab(expression(atop("D",paste("Curvature (",BL^{-1},")"),atop)))+
+  scale_color_manual(name="species",values=c("#A50026","#313695","#FDAE61","#74ADD1"))+
+  scale_x_continuous(expand = c(0,0))+
+  #scale_y_continuous(limits=c(0, 40))+
+  scale_y_log10(limits=c(0.3, 40), breaks=c(0.3,1,3,10,30))+
+  facet_wrap(~species, nrow = 1)+
+  theme(
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+  )+
+  geom_line(aes(x = location2, y = Curv, group=species), colour = 'grey', alpha=0.4) + 
+  geom_pointrange(mapping = aes(colour=species),alpha=0.8,
+                  show.legend = FALSE,
+                  stat = "summary",
+                  fun.max = function(z) {quantile(z,0.75)},
+                  fun.min = function(z) {quantile(z,0.25)},
+                  fun = median, size=0.20)+
+  #geom_line(aes(x = location2, y = Curv, group=Swimmingmode), colour = 'grey', alpha=0.5) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        axis.text.x=element_text(size=15),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 20)
+  )
+#guides(color=FALSE)
+windows()
+curv.model
+
+```
+
+## Render all graphs together (wavelength, amplitude, phase, curvature)
+```{r}
+library(gridExtra)
+windows()
+multi <- grid.arrange(wavelength, amp, phase, curv, nrow=4,heights=c(3.5,3.5,3,4))
+ggsave(plot= multi, width = 12, height = 16, dpi = 600, filename = "multiplot_kinematics.pdf")
+ggsave(plot= multi, width = 12, height = 16, dpi = 600,file="Figure3_Multiplot_kinematics.jpg")
+
+```
+
+# Save kinematics dataset
+```{r Save kinematics dataset}
+
+#megakine <- merge(megakine, Swimmingmode, by=("clip_id"))
+#megakine$species <- megakine$species.y
+#megakine$species.y <- NULL
+write.csv(megakine, file = "F:/Mega kinematic all videos/Analysis/Megakine.csv")
+write_xlsx(megakine,'Megakine.xlsx')
+```
+
