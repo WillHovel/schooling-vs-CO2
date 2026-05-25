@@ -9,6 +9,10 @@ function fish_points = transform_fish(fish_points)
 %   The struct schema is identical to the output of load_fish_points /
 %   load_fish_points_named — only the .X/.Y[/.Z] fields are added.
 %
+%   PASSTHROUGH: if fish_points(i).pre_transformed is true (e.g. CURVES
+%   Format E), the .X and .Y fields are already populated and no rotation
+%   is performed.  The struct is returned unchanged.
+%
 %   METHOD  (follows Transformer.m by Castro-Santos & Goerig 2017)
 %     For each frame:
 %       1. Use the MIDDLE points (all except first and last) to fit a
@@ -20,17 +24,25 @@ function fish_points = transform_fish(fish_points)
 %            x' = x*cos(θ) - (y-a)*sin(θ)
 %            y' = x*sin(θ) + (y-a)*cos(θ) + a
 %            z' = z  (unchanged — dorso-ventral axis is not rotated)
-%       4. Translate so the minimum x' (head) = 0:
-%            X = x' - min(x')
-%            Y = y'
-%            Z = z'  (if present)
+%       4. Translate so the minimum x' (head) = 0, normalize by body length,
+%          and center Y on the body axis (subtract y-intercept 'a'):
+%            X = (x' - min(x')) / BL          -> 0 (head) to 1 (tail)
+%            Y = (y' - a)       / BL          -> lateral deviation in BL
+%            Z = (z  - z_head)  / BL          -> DV deviation in BL (3-D only)
 %
 %   Added fields (matrices, rows = frames, cols = points):
-%     .X    [nFrames x nPoints]   rotated + translated x
-%     .Y    [nFrames x nPoints]   rotated y
-%     .Z    [nFrames x nPoints]   z (3-D only, unchanged by rotation)
+%     .X    [nFrames x nPoints]   body-axis position in BL  (0=head, ~1=tail)
+%     .Y    [nFrames x nPoints]   lateral displacement in BL (0 = body axis)
+%     .Z    [nFrames x nPoints]   dorso-ventral deviation in BL from head (3-D only)
 
     for fi = 1:numel(fish_points)
+
+        % ---- PASSTHROUGH for pre-transformed data (e.g. CURVES Format E) ----
+        if isfield(fish_points(fi), 'pre_transformed') && fish_points(fi).pre_transformed
+            fprintf('transform_fish: skipping %s (pre-transformed CURVES data)\n', fish_points(fi).name);
+            continue;
+        end
+
         pts     = fish_points(fi).points;   % [nFrames x nPoints x nDims]
         nFrames = size(pts, 1);
         nPoints = size(pts, 2);
@@ -77,11 +89,20 @@ function fish_points = transform_fish(fish_points)
 
             % Translate: head (min x) to x = 0
             x_shift = min(x_r);
-            X(f, :) = x_r - x_shift;
-            Y(f, :) = y_r;
-            if has_z
-                Z(f, :) = z_all;   % Z not rotated
+            x_trans = x_r - x_shift;
+
+            % Normalize X and Y by body length (tail X = BL in raw units)
+            % and center Y on the body axis (subtract rotation y-intercept 'a'
+            % which is where the middle-point fitted line sits in rotated space).
+            bl = x_trans(end);   % tail position = body length in raw units
+            if bl > 0
+                X(f, :) = x_trans / bl;              % 0 (head) -> 1 (tail) in BL
+                Y(f, :) = (y_r - a) / bl;            % lateral deviation in BL
+                if has_z
+                    Z(f, :) = (z_all - z_all(1)) / bl;  % DV deviation from head in BL
+                end
             end
+            % (frames where bl <= 0 remain NaN — collapsed / bad frames)
         end
 
         fish_points(fi).X = X;
