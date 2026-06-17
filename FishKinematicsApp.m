@@ -61,22 +61,22 @@ function FishKinematicsApp()
     %% ---- Figure ----
     fig = uifigure('Name',     'Kinemetrix', ...
                    'Position', [60 40 1260 860], ...
-                   'Color',    [0.95 0.95 0.95]);
+                   'Color',    [0.95 0.95 0.95], ...
+                   'AutoResizeChildren', 'off');
+    % Minimum usable size — prevents content from collapsing below this
+    fig.UserData.minW = 800;
+    fig.UserData.minH = 560;
 
-    % ---- Title bar ----
-    titleBar = uipanel(fig, 'Position', [0 820 1260 40], ...
-        'BackgroundColor', [0.12 0.22 0.45], 'BorderType', 'none');
-    uilabel(titleBar, 'Text', 'Kinemetrix', ...
-        'Position', [0 0 1260 40], ...
-        'FontSize', 22, 'FontWeight', 'bold', ...
-        'FontColor', [1 1 1], ...
-        'HorizontalAlignment', 'center', ...
-        'VerticalAlignment',   'center');
+    % Layout constants
+    LP_W   = 350;  % fixed left-panel width in px
+    MARGIN = 10;   % outer margin
+    fw0 = fig.Position(3);  fh0 = fig.Position(4);
 
     %% ================================================================
     %  LEFT PANEL  (inputs, point selector, results)
     %% ================================================================
-    LP = uipanel(fig, 'Position', [10 10 340 806], ...
+    LP = uipanel(fig, ...
+                 'Position', [MARGIN MARGIN LP_W fh0-2*MARGIN], ...
                  'BackgroundColor', [1 1 1], 'BorderType', 'line', ...
                  'Title', '', 'Scrollable', 'on');
 
@@ -216,14 +216,16 @@ function FishKinematicsApp()
     %% ================================================================
     %  RIGHT PANEL  — Tabbed: Kinematics | Fin Analysis
     %% ================================================================
-    tg = uitabgroup(fig, 'Position', [360 10 880 806]);
+    TG_X = MARGIN + LP_W + MARGIN;
+    tg = uitabgroup(fig, 'Position', [TG_X MARGIN fw0-TG_X-MARGIN fh0-2*MARGIN]);
 
     % ---- Tab 1: Kinematics ----
     tabKine = uitab(tg, 'Title', 'Kinematics');
 
-    % Midline controls bar
-    midCtrlPanel = uipanel(tabKine, 'Position', [4 748 866 44], ...
-        'BackgroundColor', [0.93 0.95 1], 'BorderType', 'line', 'Title', '');
+    % Midline controls bar — anchored to top of kinematics tab
+    midCtrlPanel = uipanel(tabKine, 'Units', 'normalized', 'Position', [0 0.935 1 0.065], ...
+        'BackgroundColor', [0.93 0.95 1], 'BorderType', 'line', 'Title', '', ...
+        'AutoResizeChildren', 'off');
     uilabel(midCtrlPanel, 'Text', 'Midlines shown:', ...
         'Position', [8 10 110 22], 'FontSize', 11);
     app.midlineCount = uieditfield(midCtrlPanel, 'numeric', ...
@@ -237,14 +239,16 @@ function FishKinematicsApp()
         'Value', 'parula', ...
         'ValueChangedFcn', @(~,~) refreshMidlines());
 
-    % 2x2 axes on kinematics tab
+    % 2x2 axes on kinematics tab — normalized so they resize with the window
     titles_k = {'Midlines (FFT interpolated)', 'Amplitude envelope', ...
                  'Curvature profile',           'Beat frequency spectra'};
-    pos_k    = {[10 390 420 350]; [440 390 420 350]; [10 10 420 350]; [440 10 420 350]};
+    % [left bottom width height] in normalized units (0-1 within tab)
+    pos_k_n  = {[0.02 0.50 0.47 0.42]; [0.52 0.50 0.47 0.42]; ...
+                [0.02 0.03 0.47 0.44]; [0.52 0.03 0.47 0.44]};
 
     app.ax = gobjects(4,1);
     for i = 1:4
-        app.ax(i) = uiaxes(tabKine, 'Position', pos_k{i}, ...
+        app.ax(i) = uiaxes(tabKine, 'Units', 'normalized', 'Position', pos_k_n{i}, ...
             'BackgroundColor', [1 1 1], 'Box', 'on');
         title(app.ax(i), titles_k{i}, 'FontSize', 11);
         app.ax(i).Toolbar.Visible = 'off';
@@ -261,9 +265,10 @@ function FishKinematicsApp()
     % ---- Tab 2: Fin Analysis ----
     tabFin = uitab(tg, 'Title', 'Fin Analysis (3D)');
 
-    % Fin point selector panel
-    finSelPanel = uipanel(tabFin, 'Position', [4 720 866 72], ...
-        'BackgroundColor', [0.97 1 0.97], 'BorderType', 'line', 'Title', 'Fin Point Selection');
+    % Fin point selector panel — anchored to top of fin tab
+    finSelPanel = uipanel(tabFin, 'Units', 'normalized', 'Position', [0 0.91 1 0.09], ...
+        'BackgroundColor', [0.97 1 0.97], 'BorderType', 'line', 'Title', 'Fin Point Selection', ...
+        'AutoResizeChildren', 'off');
     uilabel(finSelPanel, 'Text', 'Root point:', ...
         'Position', [8 22 80 20], 'FontSize', 11);
     app.finRootDrop = uidropdown(finSelPanel, 'Position', [92 20 160 24], ...
@@ -284,17 +289,27 @@ function FishKinematicsApp()
     % ---- Tab 3: Pectoral Fin Phase (Format D dual-camera) ----
     tabPect = uitab(tg, 'Title', 'Pectoral Phase (2D)');
 
-    app.pectInfoLabel = uilabel(tabPect, 'Position', [8 756 860 36], ...
+    pectInfoPanel = uipanel(tabPect, 'Units', 'normalized', ...
+        'Position', [0 0.93 1 0.06], ...
+        'BorderType', 'none', 'BackgroundColor', [0.95 0.95 0.95], ...
+        'AutoResizeChildren', 'off');
+    app.pectInfoLabel = uilabel(pectInfoPanel, 'Position', [8 2 862 32], ...
         'Text', 'Load a dual-camera CSV (Format D: pt1_cam1_X ...) and run analysis to see pectoral fin phase.', ...
         'FontSize', 12, 'WordWrap', 'on', 'FontColor', [0.4 0.4 0.6]);
 
-    app.pectResultArea = uitextarea(tabPect, 'Position', [8 580 860 168], ...
+    pectResultPanel = uipanel(tabPect, 'Units', 'normalized', ...
+        'Position', [0 0.71 1 0.21], ...
+        'BorderType', 'none', 'BackgroundColor', [0.97 0.97 0.97], ...
+        'AutoResizeChildren', 'off');
+    app.pectResultArea = uitextarea(pectResultPanel, 'Position', [0 0 400 200], ...
         'Editable', 'off', 'FontSize', 12, 'FontName', 'Courier New', ...
         'BackgroundColor', [0.97 0.97 0.97]);
+    pectResultPanel.SizeChangedFcn = @(src,~) set(app.pectResultArea, ...
+        'Position', [0 0 max(1,src.Position(3)) max(1,src.Position(4))]);
 
     % Two axes: time-domain overlay and cross-correlation
     app.pectAx = gobjects(2,1);
-    app.pectAx(1) = uiaxes(tabPect, 'Position', [8 300 860 272], ...
+    app.pectAx(1) = uiaxes(tabPect, 'Units', 'normalized', 'Position', [0.01 0.37 0.98 0.33], ...
         'BackgroundColor', [1 1 1], 'Box', 'on');
     title(app.pectAx(1), 'Pectoral fin tip signals over time (right pt2 vs left pt12)', 'FontSize', 10);
     xlabel(app.pectAx(1), 'Frame');  ylabel(app.pectAx(1), 'Y position');
@@ -302,7 +317,7 @@ function FishKinematicsApp()
     text(app.pectAx(1), 0.5, 0.5, 'No data', 'Units','normalized', ...
          'HorizontalAlignment','center','FontSize',12,'Color',[0.75 0.75 0.75]);
 
-    app.pectAx(2) = uiaxes(tabPect, 'Position', [8 8 860 280], ...
+    app.pectAx(2) = uiaxes(tabPect, 'Units', 'normalized', 'Position', [0.01 0.02 0.98 0.34], ...
         'BackgroundColor', [1 1 1], 'Box', 'on');
     title(app.pectAx(2), 'Cross-correlation (right pectoral vs left pectoral)', 'FontSize', 10);
     xlabel(app.pectAx(2), 'Lag (frames)');  ylabel(app.pectAx(2), 'Normalized cross-correlation');
@@ -310,21 +325,27 @@ function FishKinematicsApp()
     text(app.pectAx(2), 0.5, 0.5, 'No data', 'Units','normalized', ...
          'HorizontalAlignment','center','FontSize',12,'Color',[0.75 0.75 0.75]);
 
-    % Fin results text
-    app.finResultsArea = uitextarea(tabFin, 'Position', [4 580 866 132], ...
+    % Fin results text area — wrapped in a normalized uipanel so it resizes
+    finResultsPanel = uipanel(tabFin, 'Units', 'normalized', ...
+        'Position', [0 0.72 1 0.18], ...
+        'BorderType', 'none', 'BackgroundColor', [0.97 0.97 0.97], ...
+        'AutoResizeChildren', 'off');
+    app.finResultsArea = uitextarea(finResultsPanel, 'Position', [0 0 400 200], ...
         'Editable', 'off', 'FontSize', 11, 'FontName', 'Courier New', ...
         'BackgroundColor', [0.97 0.97 0.97]);
+    finResultsPanel.SizeChangedFcn = @(src,~) set(app.finResultsArea, ...
+        'Position', [0 0 max(1,src.Position(3)) max(1,src.Position(4))]);
 
-    % Fin axes: 3 plots
+    % Fin axes: 3 plots — normalized positions
     app.finAx = gobjects(3,1);
     fin_titles = {'Pitch / Roll / Yaw over time', ...
                   'Fin tip distance traveled over time', ...
                   'Fin vector trajectory (tip, XY plane)'};
-    fin_pos = {[4 300 580 272]; [596 300 274 272]; [596 4 274 272]};
+    fin_pos_n = {[0.01 0.37 0.65 0.33]; [0.67 0.37 0.32 0.33]; [0.67 0.02 0.32 0.33]};
     fin_xl = {'Frame','Frame','X (mm)'};
     fin_yl = {'Angle (deg)','Cumulative distance','Y (mm)'};
     for i = 1:3
-        app.finAx(i) = uiaxes(tabFin, 'Position', fin_pos{i}, ...
+        app.finAx(i) = uiaxes(tabFin, 'Units', 'normalized', 'Position', fin_pos_n{i}, ...
             'BackgroundColor', [1 1 1], 'Box', 'on');
         title(app.finAx(i), fin_titles{i}, 'FontSize', 10);
         xlabel(app.finAx(i), fin_xl{i});
@@ -335,7 +356,7 @@ function FishKinematicsApp()
     end
 
     % Fin 3D vector axis (bottom-left large area)
-    app.finAx3D = uiaxes(tabFin, 'Position', [4 4 580 272], ...
+    app.finAx3D = uiaxes(tabFin, 'Units', 'normalized', 'Position', [0.01 0.02 0.65 0.34], ...
         'BackgroundColor', [0.04 0.04 0.08], 'Box', 'on');
     title(app.finAx3D, 'Fin vector trajectory (3D, colored by frame)', 'FontSize', 10, 'Color', [1 1 1]);
     xlabel(app.finAx3D,'X'); ylabel(app.finAx3D,'Y'); zlabel(app.finAx3D,'Z');
@@ -345,6 +366,35 @@ function FishKinematicsApp()
     app.finAx3D.ZColor = [0.7 0.7 0.7];
     text(app.finAx3D, 0.5, 0.5, 'No data', 'Units','normalized', ...
          'HorizontalAlignment','center','FontSize',12,'Color',[0.6 0.6 0.6]);
+
+    %% ================================================================
+    %  RESIZE  — reflow top-level containers when window changes size
+    %% ================================================================
+    fig.SizeChangedFcn = @(~,~) onFigResize();
+
+    function onFigResize()
+        fw = max(fig.Position(3), fig.UserData.minW);
+        fh = max(fig.Position(4), fig.UserData.minH);
+
+        % Left panel: fixed width, full height
+        LP.Position = [MARGIN MARGIN LP_W fh-2*MARGIN];
+
+        % Tab group: fills all remaining width and height
+        TG_X2 = MARGIN + LP_W + MARGIN;
+        tg.Position = [TG_X2 MARGIN fw-TG_X2-MARGIN fh-2*MARGIN];
+
+        % ---- Reflow pixel-positioned elements inside tabs ----
+        % TAB_CHROME: height consumed by the tab-label strip (~28px)
+        TAB_CHROME = 28;
+        tw = fw - TG_X2 - MARGIN;       % usable tab inner width
+        th = fh - 2*MARGIN - TAB_CHROME; % usable tab inner height
+
+        % Pectoral phase tab: info label (top 5%), results area (next 22%)
+
+    end
+
+    % Run once to settle layout at startup
+    onFigResize();
 
     %% ================================================================
     %  CALLBACKS
