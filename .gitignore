@@ -6,3 +6,6 @@ Original Files/*.csv
 Original Files/*.h5
 Original Files/*.xls
 Original Files/*.xlsx
+
+# Analysis is all local
+Analysis/

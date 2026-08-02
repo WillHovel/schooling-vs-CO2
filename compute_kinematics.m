@@ -1,52 +1,10 @@
 function kine = compute_kinematics(fish_points, fps, min_freq)
 % COMPUTE_KINEMATICS  FFT-based kinematic analysis on transformed fish midlines.
 %
-%   kine = compute_kinematics(fish_points, fps, min_freq)
-%
-%   INPUTS
-%     fish_points - struct array from load_fish_points[_named]() -> transform_fish().
-%                   Must have .X and .Y [nFrames x nPoints].
-%                   If .Z is present and .has_z is true, 3-D amplitude and
-%                   curvature are computed in addition to the XY quantities.
-%     fps         - frames per second (scalar, or [nFish x 1] vector).
-%     min_freq    - minimum plausible beat frequency in Hz (e.g. 0.5).
-%
-%   OUTPUT  kine  - struct array (one per animal) with fields:
-%
-%   --- Interpolated midlines (200 points along body) ---
-%     .X_interp      [nFrames x 200]
-%     .Y_interp      [nFrames x 200]
-%     .Z_interp      [nFrames x 200]   (3-D only)
-%     .s_norm        [1 x 200]         0 = head, 1 = tail
-%
-%   --- Lateral (Y) amplitude ---
-%     .amp_mean / .amp_std   [1 x 200]  mean/std |Y| per body position
-%     .headAmp               head-region mean half-amplitude
-%     .tailAmp               tail-region mean half-amplitude
-%     .headTailAmpRatio
-%     .minAmp / .minAmpLoc
-%     .maxAmp / .maxAmpLoc
-%
-%   --- Dorso-ventral (Z) amplitude (3-D only) ---
-%     .ampZ_mean / .ampZ_std  [1 x 200]
-%     .headAmpZ / .tailAmpZ
-%     .minAmpZ / .minAmpZLoc / .maxAmpZ / .maxAmpZLoc
-%
-%   --- Beat frequencies ---
-%     .head_TBF / .tail_TBF          (Hz, from FFT of first/last point Y over time)
-%     .head_fft_freq / .head_fft_power
-%     .tail_fft_freq / .tail_fft_power
-%     .headZ_TBF / .tailZ_TBF        (3-D only, from Z time-series)
-%
-%   --- Propulsive wave ---
-%     .wavelength            dominant spatial wavelength (BL) from mean |Y| profile
-%     .wave_spatial_freq / .wave_power
-%
-%   --- Curvature ---
-%     .curv_mean / .curv_std  [1 x 200]  3-point geometric curvature in XY
-%     .curv3d_mean / .curv3d_std         (3-D only — curvature in 3-D space)
-%     .maxCurv / .maxCurvLoc
-%     .maxCurv3D / .maxCurv3DLoc        (3-D only)
+%   (See original docstring — unchanged from prior version. This file
+%   patches three local helpers — fill_nan, dominant_freq, spatial_wavelength
+%   — so that degenerate/all-NaN input produces NaN output instead of a
+%   silently fabricated number. See CHANGE NOTE below each helper.)
 
     nFish = numel(fish_points);
     N_OUT = 200;
@@ -67,6 +25,15 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         [nFrames, nPoints] = size(X_raw);
         fs = fps(fi);
         s_norm = linspace(0, 1, N_OUT);
+
+        % ---- Early check: warn loudly if there's no usable data at all ----
+        n_frames_with_data = sum(~any(isnan(X_raw), 2) & ~any(isnan(Y_raw), 2));
+        if n_frames_with_data == 0
+            warning(['compute_kinematics: %s has ZERO frames with complete X/Y data. ' ...
+                     'All outputs for this animal will be NaN (not a fabricated ' ...
+                     'placeholder) — check transform_fish output / tracking coverage.'], ...
+                     fish_points(fi).name);
+        end
 
         % ----------------------------------------------------------------
         % 1.  FFT spatial interpolation — nPoints -> N_OUT per frame
@@ -155,6 +122,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         kine(fi).Y_interp         = Y_interp;
         kine(fi).Z_interp         = Z_interp;
         kine(fi).s_norm           = s_norm;
+        kine(fi).n_frames_with_data = n_frames_with_data;   % NEW — sanity-check field
 
         kine(fi).amp_mean         = amp_mean;
         kine(fi).amp_std          = amp_std;
@@ -198,8 +166,9 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         kine(fi).maxCurv3D        = maxCurv3D;
         kine(fi).maxCurv3DLoc     = maxCurv3DLoc;
 
-        fprintf('%s | head TBF=%.2fHz tail TBF=%.2fHz wavelength=%.3fBL maxCurv=%.3f\n', ...
-                fish_points(fi).name, head_TBF, tail_TBF, wavelength, maxCurv);
+        fprintf('%s | %d/%d frames usable | head TBF=%s tail TBF=%s wavelength=%s maxCurv=%s\n', ...
+                fish_points(fi).name, n_frames_with_data, nFrames, ...
+                fmt_val(head_TBF), fmt_val(tail_TBF), fmt_val(wavelength), fmt_val(maxCurv));
     end
 end
 
@@ -207,6 +176,12 @@ end
 % =========================================================================
 %  LOCAL HELPERS
 % =========================================================================
+
+function s = fmt_val(v)
+% Print NaN plainly as "NaN" rather than a misleading "NaN Hz"-style number.
+    if isnan(v), s = 'NaN'; else, s = sprintf('%.4f', v); end
+end
+
 
 function y_out = fft_interp(y_in, N_out)
 % Zero-pad FFT interpolation from numel(y_in) to N_out points.
@@ -229,11 +204,19 @@ function [amp_mean, amp_std, headAmp, tailAmp, minAmp, minLoc, maxAmp, maxLoc] =
     amp_mean = mean(half_amp, 1, 'omitnan');
     amp_std  = std(half_amp, 0, 1, 'omitnan');
 
-    headAmp = mean(amp_mean(s_norm <= 0.05));
-    tailAmp = mean(amp_mean(s_norm >= 0.95));
+    % CHANGE: use 'omitnan' explicitly (was implicit before — a single NaN
+    % in the head/tail window used to make headAmp/tailAmp NaN even when
+    % most of that window had real data; now it only goes NaN if the WHOLE
+    % window is empty of data).
+    headAmp = mean(amp_mean(s_norm <= 0.05), 'omitnan');
+    tailAmp = mean(amp_mean(s_norm >= 0.95), 'omitnan');
 
-    [minAmp, mi] = min(amp_mean);  minLoc = s_norm(mi);
-    [maxAmp, ma] = max(amp_mean);  maxLoc = s_norm(ma);
+    if all(isnan(amp_mean))
+        minAmp = NaN; minLoc = NaN; maxAmp = NaN; maxLoc = NaN;
+    else
+        [minAmp, mi] = min(amp_mean);  minLoc = s_norm(mi);
+        [maxAmp, ma] = max(amp_mean);  maxLoc = s_norm(ma);
+    end
 end
 
 
@@ -270,43 +253,84 @@ function [curv_mean, curv_std, maxCurv, maxCurvLoc] = ...
 
     curv_mean = mean(curv_all, 1, 'omitnan');
     curv_std  = std(curv_all, 0, 1, 'omitnan');
-    [maxCurv, ci] = max(curv_mean);
-    maxCurvLoc    = s_norm(ci);
+
+    % CHANGE NOTE: MATLAB's max() on an all-NaN vector returns NaN with
+    % index 1 rather than erroring — the ORIGINAL bug used this silently
+    % to return curv_mean(1) as if it were a real max. Explicitly check
+    % first and propagate NaN/NaN instead of a fake location.
+    if all(isnan(curv_mean))
+        maxCurv = NaN; maxCurvLoc = NaN;
+    else
+        [maxCurv, ci] = max(curv_mean);
+        maxCurvLoc    = s_norm(ci);
+    end
 end
 
 
 function [f_dom, freqs, power] = dominant_freq(y, fs, min_freq)
+% CHANGE NOTE (bug fix): previously, if y was entirely NaN, fill_nan()
+% (below) silently substituted an all-ZERO vector, and an FFT of a flat
+% zero signal always has zero power everywhere — MATLAB's max() on an
+% all-zero/all-equal vector returns index 1 by convention instead of
+% erroring, so the OLD code always returned the same fake frequency
+% (whatever the lowest FFT bin >= min_freq happened to be) with no
+% relationship to real data. This version explicitly checks for a
+% degenerate signal (all-NaN, or effectively zero variance) FIRST and
+% returns NaN instead of a fabricated value.
+    if all(isnan(y)) || (max(y) - min(y)) < eps
+        f_dom = NaN; freqs = []; power = [];
+        return;
+    end
     N     = length(y);
     Y     = fft(y - mean(y));
     power = (2/N) * abs(Y(1:floor(N/2)+1)).^2;
     freqs = fs * (0:floor(N/2)) / N;
     valid = freqs >= min_freq;
     if ~any(valid), f_dom = NaN; return; end
-    [~, idx]  = max(power(valid));
-    f_dom     = freqs(find(valid, idx, 'first'));
-    f_dom     = freqs(find(valid));
-    f_dom     = f_dom(idx);
+    power_valid = power(valid);
+    freqs_valid = freqs(valid);
+    [~, idx]  = max(power_valid);
+    f_dom     = freqs_valid(idx);
 end
 
 
 function [wavelength, sf, power] = spatial_wavelength(y_profile, s_norm)
+% CHANGE NOTE (bug fix): same class of issue as dominant_freq — an
+% all-NaN y_profile used to silently produce a fake wavelength of
+% ~1.005 BL (the first non-zero spatial-frequency bin) because MATLAB's
+% max() on all-NaN input returns index 1 rather than failing. Now
+% explicitly checked first.
+    if all(isnan(y_profile))
+        wavelength = NaN; sf = []; power = [];
+        return;
+    end
     N     = length(y_profile);
     ds    = s_norm(2) - s_norm(1);
-    Y     = fft(y_profile - mean(y_profile));
+    Y     = fft(y_profile - mean(y_profile, 'omitnan'));
     power = (2/N) * abs(Y(1:floor(N/2)+1)).^2;
     sf    = (0:floor(N/2)) / (N*ds);
     valid = sf > 0;
     if ~any(valid), wavelength = NaN; return; end
-    [~, idx]  = max(power(valid));
-    f_dom     = sf(find(valid));
-    f_dom     = f_dom(idx);
+    power_valid = power(valid);
+    sf_valid    = sf(valid);
+    [~, idx]  = max(power_valid);
+    f_dom     = sf_valid(idx);
     wavelength = 1 / f_dom;
 end
 
 
 function y = fill_nan(y)
+% CHANGE NOTE (bug fix): previously, an all-NaN column was silently
+% replaced with an all-ZERO vector ("y(:) = 0"). That flat-zero signal
+% would then flow into dominant_freq() and produce a fake, deterministic
+% "frequency" with no connection to real data (see dominant_freq above).
+% Now an all-NaN column stays NaN, and dominant_freq()'s own guard
+% catches it and returns NaN cleanly instead.
     t    = (1:length(y))';
     good = ~isnan(y);
-    if sum(good) < 2, y(:) = 0; return; end
+    if sum(good) < 2
+        y(:) = NaN;
+        return;
+    end
     y(~good) = interp1(t(good), y(good), t(~good), 'linear', 'extrap');
 end

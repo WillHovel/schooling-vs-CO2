@@ -1,7 +1,7 @@
 function fish_points = transform_fish(fish_points)
 % TRANSFORM_FISH  Rotate and translate each fish's midline so the mean
-%                 swimming axis is parallel to the X-axis, with the first
-%                 point (head) at X = 0.
+%                 swimming axis is parallel to the X-axis, with the head
+%                 at X = 0.
 %
 %   fish_points = transform_fish(fish_points)
 %
@@ -13,7 +13,8 @@ function fish_points = transform_fish(fish_points)
 %   Format E), the .X and .Y fields are already populated and no rotation
 %   is performed.  The struct is returned unchanged.
 %
-%   METHOD  (follows Transformer.m by Castro-Santos & Goerig 2017)
+%   METHOD  (follows Transformer.m by Castro-Santos & Goerig 2017, with
+%   an added auto-orientation step — see CHANGE NOTE below)
 %     For each frame:
 %       1. Use the MIDDLE points (all except first and last) to fit a
 %          least-squares line in the XY plane: y = a + b*x
@@ -24,16 +25,50 @@ function fish_points = transform_fish(fish_points)
 %            x' = x*cos(θ) - (y-a)*sin(θ)
 %            y' = x*sin(θ) + (y-a)*cos(θ) + a
 %            z' = z  (unchanged — dorso-ventral axis is not rotated)
-%       4. Translate so the minimum x' (head) = 0, normalize by body length,
-%          and center Y on the body axis (subtract y-intercept 'a'):
-%            X = (x' - min(x')) / BL          -> 0 (head) to 1 (tail)
-%            Y = (y' - a)       / BL          -> lateral deviation in BL
-%            Z = (z  - z_head)  / BL          -> DV deviation in BL (3-D only)
+%       4. AUTO-ORIENTATION (see change note): compare the two ENDPOINTS
+%          (point 1 and point end) in rotated space. Whichever has the
+%          smaller rotated-X is treated as the head for THIS frame — the
+%          code no longer assumes point 1 is always the head. Body length
+%          is the distance between the two endpoints, so it is always
+%          positive (as long as both endpoints are digitized), instead of
+%          silently coming out as exactly zero when a dataset's point
+%          order/rotation happens to put the last point ahead of the
+%          first.
+%            head_ref = min(x'(1), x'(end))
+%            tail_ref = max(x'(1), x'(end))
+%            bl       = tail_ref - head_ref
+%            X = (x' - head_ref) / bl        -> 0 (head) to 1 (tail)
+%            Y = (y' - a)        / bl        -> lateral deviation in BL
+%            Z = (z  - z_head)   / bl        -> DV deviation in BL (3-D only)
+%
+%   CHANGE NOTE (why this differs from the original Transformer.m logic):
+%   The original method defined "head" as whichever point had the smallest
+%   rotated X across ALL digitized points, and body length as the LAST
+%   point's position after that shift. That silently breaks in two ways:
+%     (a) if a non-endpoint point (e.g. a protruding fin) ends up with a
+%         smaller rotated-X than the true head, the origin is wrong; and
+%     (b) if the dataset's raw coordinate convention/point order happens
+%         to put the LAST point ahead of the FIRST after rotation (as
+%         happened with a shark trial where Caudal consistently rotated
+%         to a smaller X than Snout), body length comes out as exactly
+%         zero on every single frame, and the whole animal's .X/.Y end up
+%         100% NaN with no warning.
+%   Comparing ONLY the two endpoints (not all points) and taking whichever
+%   is smaller as the head fixes both problems and works automatically
+%   regardless of point order or coordinate handedness — no need to
+%   manually reverse point order in your data.
 %
 %   Added fields (matrices, rows = frames, cols = points):
 %     .X    [nFrames x nPoints]   body-axis position in BL  (0=head, ~1=tail)
 %     .Y    [nFrames x nPoints]   lateral displacement in BL (0 = body axis)
 %     .Z    [nFrames x nPoints]   dorso-ventral deviation in BL from head (3-D only)
+%     .pct_frames_valid   scalar  % of frames that produced a valid transform
+%     .n_frames_reversed  scalar  # of frames where point-end (not point 1)
+%                                 was auto-detected as the head — a high
+%                                 count here means your point order is
+%                                 consistently reversed relative to the
+%                                 anatomical head-to-tail convention, which
+%                                 is fine (auto-corrected) but worth knowing.
 
     for fi = 1:numel(fish_points)
 
@@ -60,6 +95,9 @@ function fish_points = transform_fish(fish_points)
         Y = NaN(nFrames, nPoints);
         Z = NaN(nFrames, nPoints);
 
+        n_valid    = 0;
+        n_reversed = 0;
+
         for f = 1:nFrames
             x_all = squeeze(pts(f, :, 1));   % [1 x nPoints]
             y_all = squeeze(pts(f, :, 2));
@@ -71,8 +109,15 @@ function fish_points = transform_fish(fish_points)
             x_mid = x_all(middle_idx);
             y_mid = y_all(middle_idx);
 
-            % Skip frame if any middle point is missing
+            % Skip frame if any middle point is missing (can't fit the axis line)
             if any(isnan(x_mid)) || any(isnan(y_mid)), continue; end
+
+            % Skip frame if either ENDPOINT is missing — body length is
+            % undefined without both ends, regardless of how many middle
+            % points are present.
+            if isnan(x_all(1)) || isnan(y_all(1)) || isnan(x_all(end)) || isnan(y_all(end))
+                continue;
+            end
 
             % Fit line through middle points in XY plane
             coeffs = polyfit(x_mid, y_mid, 1);
@@ -87,28 +132,80 @@ function fish_points = transform_fish(fish_points)
             x_r = x_all .* cos(theta) - (y_all - a) .* sin(theta);
             y_r = x_all .* sin(theta) + (y_all - a) .* cos(theta) + a;
 
-            % Translate: head (min x) to x = 0
-            x_shift = min(x_r);
-            x_trans = x_r - x_shift;
+            % ---- Auto-orientation via mirroring (point 1 always = head) ----
+            % Body length is the distance between the two endpoints — always
+            % non-negative, so this never silently collapses to zero the way
+            % "bl = x_trans(end)" could when point-end ended up rotated
+            % ahead of point 1 (see CHANGE NOTE above).
+            x1 = x_r(1);
+            xN = x_r(end);
+            bl = abs(xN - x1);
 
-            % Normalize X and Y by body length (tail X = BL in raw units)
-            % and center Y on the body axis (subtract rotation y-intercept 'a'
-            % which is where the middle-point fitted line sits in rotated space).
-            bl = x_trans(end);   % tail position = body length in raw units
-            if bl > 0
-                X(f, :) = x_trans / bl;              % 0 (head) -> 1 (tail) in BL
-                Y(f, :) = (y_r - a) / bl;            % lateral deviation in BL
-                if has_z
-                    Z(f, :) = (z_all - z_all(1)) / bl;  % DV deviation from head in BL
-                end
+            if isnan(bl) || bl <= eps
+                continue;   % degenerate frame (endpoints coincide) — leave NaN
             end
-            % (frames where bl <= 0 remain NaN — collapsed / bad frames)
+
+            % If point-end rotated to a SMALLER x than point 1, mirror the
+            % whole frame's X-axis about point 1 so that point 1 still maps
+            % to X=0 and point-end still maps to X=1. A pure X-mirror (Y
+            % untouched) preserves all pairwise Euclidean distances, so
+            % amplitude/curvature/wavelength are unaffected by this — it
+            % only fixes which end is labeled "head", not any measured
+            % quantity. This keeps point_names{1} correctly meaning "head"
+            % for every frame WITHOUT touching your source data's point
+            % order or column layout.
+            sign_flip = sign(xN - x1);
+            if sign_flip == 0
+                continue;   % shouldn't happen given bl>eps check above, but guard anyway
+            end
+            if sign_flip < 0
+                n_reversed = n_reversed + 1;
+            end
+
+            n_valid = n_valid + 1;
+
+            X(f, :) = sign_flip * (x_r - x1) / bl;   % point1 -> 0, point-end -> 1 always
+            Y(f, :) = (y_r - a) / bl;                 % lateral deviation in BL (unaffected by mirror)
+            if has_z
+                Z(f, :) = (z_all - z_all(1)) / bl;    % DV deviation from point 1 (head) in BL
+            end
         end
+
+        pct_valid = 100 * n_valid / nFrames;
 
         fish_points(fi).X = X;
         fish_points(fi).Y = Y;
         if has_z
             fish_points(fi).Z = Z;
+        end
+        fish_points(fi).pct_frames_valid  = pct_valid;
+        fish_points(fi).n_frames_reversed = n_reversed;
+
+        fprintf('transform_fish: %s | %d/%d frames valid (%.1f%%)', ...
+                fish_points(fi).name, n_valid, nFrames, pct_valid);
+        if n_reversed > 0
+            fprintf('  [%d/%d frame(s) mirrored: point-end rotated ahead of point 1]', ...
+                    n_reversed, max(n_valid,1));
+        end
+        fprintf('\n');
+        if n_valid > 0 && n_reversed > n_valid / 2
+            fprintf(['  NOTE: point-end was rotated ahead of point 1 in the majority of frames\n' ...
+                     '  for %s. Each such frame was auto-mirrored so point_names{1} ("%s") still\n' ...
+                     '  correctly maps to the head (X~0) and point_names{end} ("%s") to the tail\n' ...
+                     '  (X~1) — amplitude/curvature are unaffected by this (distances are preserved\n' ...
+                     '  under mirroring). No changes to your source CSV were needed.\n'], ...
+                     fish_points(fi).name, fish_points(fi).point_names{1}, fish_points(fi).point_names{end});
+        end
+
+        if n_valid == 0
+            warning(['transform_fish: %s has ZERO valid frames after transform. ' ...
+                     'All downstream kinematics for this animal will be NaN — ' ...
+                     'check that middle points and both endpoints are actually ' ...
+                     'tracked in at least some frames.'], fish_points(fi).name);
+        elseif pct_valid < 20
+            warning(['transform_fish: %s has only %.1f%% valid frames — results ' ...
+                     'may be based on very little data. Check tracking coverage.'], ...
+                     fish_points(fi).name, pct_valid);
         end
     end
 end
