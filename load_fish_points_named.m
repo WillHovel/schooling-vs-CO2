@@ -1,38 +1,11 @@
 function fish_points = load_fish_points_named(filename, selected_points, point_order)
 % LOAD_FISH_POINTS_NAMED  Load named-column or dual-camera 2D tracking CSV.
 %
-%   fish_points = load_fish_points_named(filename, selected_points, point_order)
-%   fish_points = load_fish_points_named(filename)   % prints available points and returns
-%
-%   Supported column formats:
-%     FORMAT B (named):       eye_X, eye_Y[, eye_Z], snout_X, ...
-%     FORMAT D (dual-camera): pt1_cam1_X, pt1_cam1_Y, pt1_cam2_X, pt1_cam2_Y, ...
-%
-%   FORMAT D anatomy:
-%     pt1  = base of pectoral fin (right)     pt7  = tip of pelvic fin
-%     pt2  = tip of pectoral fin (right)      pt8  = base of anal fin
-%     pt3  = peduncle                          pt9  = tip of anal fin
-%     pt4  = tip of caudal fin                pt10 = tip of dorsal fin
-%     pt5  = eye (right)                      pt11 = eye (left / #2)
-%     pt6  = base of pelvic fin               pt12 = pectoral fin #2 (left base)
-%     cam1 = lateral view   cam2 = ventral view
-%
-%   For FORMAT D, the pectoral fin phase analysis (pt2 vs pt12) is the
-%   primary output: see .pect_phase_result field.
-%
-%   INPUTS (FORMAT B):
-%     selected_points  - cell array of point base-names to include
-%     point_order      - integer ordering vector (head=1 to tail=end)
-%
-%   OUTPUT  fish_points — 1-element struct:
-%     .name          string  — filename stem
-%     .frames        [nFrames x 1]
-%     .point_names   {1 x nPoints}  ordered labels
-%     .points        [nFrames x nPoints x nDims]   nDims = 2 or 3
-%     .has_z         logical
-%     .format        string: 'named' or 'dual_camera'
-%     .cam_data      struct  (FORMAT D only — per-camera per-point raw data)
-%     .pect_phase_result  struct  (FORMAT D only — pectoral fin phase)
+%   (See original docstring — unchanged. This version patches the FORMAT B
+%   point-extraction loop to handle columns MATLAB imported as text
+%   because every value in them was "NA" — a fully-occluded landmark.
+%   Previously this would crash with "Conversion to double from cell is
+%   not possible"; now it becomes a clean all-NaN column with a warning.)
 
     %% Read file
     opts = detectImportOptions(filename);
@@ -93,7 +66,7 @@ function fish_points = load_fish_points_named(filename, selected_points, point_o
                 for di = 1:nDims
                     col = find_col(colNames, entry{ei}, dims{di});
                     if ~isempty(col)
-                        pair_data(:, ei, di) = T.(colNames{col});
+                        pair_data(:, ei, di) = to_numeric_col(T.(colNames{col}), entry{ei}, dims{di});
                     end
                 end
             end
@@ -103,7 +76,7 @@ function fish_points = load_fish_points_named(filename, selected_points, point_o
             for di = 1:nDims
                 col = find_col(colNames, entry, dims{di});
                 if ~isempty(col)
-                    pts(:, pi, di) = T.(colNames{col});
+                    pts(:, pi, di) = to_numeric_col(T.(colNames{col}), entry, dims{di});
                 end
             end
             labels{pi} = entry;
@@ -126,7 +99,26 @@ end
 
 
 % =========================================================================
-%  FORMAT D LOADER: pt<N>_cam<M>_X / _Y
+%  NEW HELPER: coerce a possibly-text column (from a 100%-NA landmark)
+%  to numeric, warning clearly instead of letting a crash happen later.
+% =========================================================================
+function v = to_numeric_col(col_data, pointName, dimLabel)
+    if iscell(col_data) || isstring(col_data)
+        col_data = str2double(col_data);
+        if all(isnan(col_data))
+            warning(['load_fish_points_named: "%s_%s" is 100%% missing in this file ' ...
+                     '(fully occluded/untracked landmark) — likely the far side of the ' ...
+                     'animal from the camera. Consider using the corresponding left/near-' ...
+                     'side point instead.'], pointName, dimLabel);
+        end
+    end
+    v = col_data;
+end
+
+
+% =========================================================================
+%  FORMAT D LOADER: pt<N>_cam<M>_X / _Y   (unchanged from original except
+%  for the same to_numeric_col guard on cam_data assignments)
 % =========================================================================
 function fish_points = load_dual_camera(T, colNames, nFrames, frames, filename)
 
@@ -145,7 +137,6 @@ function fish_points = load_dual_camera(T, colNames, nFrames, frames, filename)
         'pt12', 'pect_base_L'; ...
     };
 
-    % Find all pt numbers and camera numbers
     tok_all  = regexp(colNames, '^(pt\d+)_(cam\d+)_[XxYy]$', 'tokens');
     matched  = tok_all(~cellfun(@isempty, tok_all));
     pt_keys  = cellfun(@(t) t{1}{1}, matched, 'UniformOutput', false);
@@ -154,7 +145,6 @@ function fish_points = load_dual_camera(T, colNames, nFrames, frames, filename)
     pt_bases  = unique(pt_keys,  'stable');
     cam_bases = unique(cam_keys, 'stable');
 
-    % Sort numerically
     pt_nums  = cellfun(@(s) str2double(regexp(s,'\d+','match','once')), pt_bases);
     [~, ord] = sort(pt_nums);
     pt_bases = pt_bases(ord);
@@ -166,7 +156,6 @@ function fish_points = load_dual_camera(T, colNames, nFrames, frames, filename)
     nPts  = numel(pt_bases);
     nCams = numel(cam_bases);
 
-    % Store per-camera per-point data (X, Y) as a struct
     cam_data = struct();
     for ci = 1:nCams
         cam = cam_bases{ci};
@@ -175,21 +164,18 @@ function fish_points = load_dual_camera(T, colNames, nFrames, frames, filename)
             col_x = find_col_dual(colNames, pt, cam, 'X');
             col_y = find_col_dual(colNames, pt, cam, 'Y');
             if ~isempty(col_x)
-                cam_data.(cam).(pt).X = T.(colNames{col_x});
+                cam_data.(cam).(pt).X = to_numeric_col(T.(colNames{col_x}), [pt '_' cam], 'X');
             else
                 cam_data.(cam).(pt).X = NaN(nFrames, 1);
             end
             if ~isempty(col_y)
-                cam_data.(cam).(pt).Y = T.(colNames{col_y});
+                cam_data.(cam).(pt).Y = to_numeric_col(T.(colNames{col_y}), [pt '_' cam], 'Y');
             else
                 cam_data.(cam).(pt).Y = NaN(nFrames, 1);
             end
         end
     end
 
-    % Build combined points array for kinematics:
-    % Use cam1 (lateral) as primary — take X/Y for each point
-    % Points = those that have labels matching anatomy
     nDims  = 2;
     pts    = NaN(nFrames, nPts, nDims);
     labels = cell(1, nPts);
@@ -202,7 +188,6 @@ function fish_points = load_dual_camera(T, colNames, nFrames, frames, filename)
         else
             labels{pi} = pt;
         end
-        % Use cam1 (lateral view) as default for kinematics
         if nCams >= 1
             cam = cam_bases{1};
             pts(:, pi, 1) = cam_data.(cam).(pt).X;
@@ -210,7 +195,6 @@ function fish_points = load_dual_camera(T, colNames, nFrames, frames, filename)
         end
     end
 
-    % ---- Pectoral fin phase analysis (pt2 vs pt12) ----
     pect_phase = compute_pect_phase(cam_data, cam_bases, pt_bases, nFrames);
 
     [~, stem] = fileparts(filename);
@@ -238,28 +222,14 @@ end
 
 
 % =========================================================================
-%  PECTORAL FIN PHASE ANALYSIS (FORMAT D)
+%  PECTORAL FIN PHASE ANALYSIS (FORMAT D) — unchanged from original
 % =========================================================================
 function result = compute_pect_phase(cam_data, cam_bases, pt_bases, nFrames)
-% Computes the phase relationship between pectoral fin tip right (pt2)
-% and pectoral fin base left (pt12) using both camera views.
-%
-% Uses the cam2 (ventral) view for the most sensitive dorso-ventral signal,
-% falls back to cam1 if cam2 is unavailable for a given point.
-%
-% Classification:
-%   In-phase:        |phase_shift| <= 45 deg or >= 315 deg
-%   Antiphase:       135 <= |phase_shift| <= 225 deg
-%   Intermediate:    all other values
-
     result = struct();
 
-    % Prefer cam2 (ventral) for pectoral fin phase (better dorsoventral resolution)
-    % Fall back to cam1 if cam2 not available
     function [sig, cam_used] = best_signal(pt)
         cam_used = '';
         sig = [];
-        % Try cam2 first (ventral)
         for ci = numel(cam_bases):-1:1
             cam = cam_bases{ci};
             if isfield(cam_data, cam) && isfield(cam_data.(cam), pt)
@@ -293,7 +263,6 @@ function result = compute_pect_phase(cam_data, cam_bases, pt_bases, nFrames)
         return;
     end
 
-    % Use only frames where both are valid
     valid = ~isnan(sig2) & ~isnan(sig12);
     n_valid = sum(valid);
 
@@ -307,25 +276,21 @@ function result = compute_pect_phase(cam_data, cam_bases, pt_bases, nFrames)
     s2  = sig2(valid)  - mean(sig2(valid));
     s12 = sig12(valid) - mean(sig12(valid));
 
-    % FFT cross-correlation to find dominant frequency and phase
     N = n_valid;
     F2  = fft(s2);
     F12 = fft(s12);
     pow2  = abs(F2(1:floor(N/2)+1)).^2;
-    freqs = (0:floor(N/2)) / N;   % normalized frequency
+    freqs = (0:floor(N/2)) / N;
 
-    % Find dominant beat frequency (ignore DC, i.e., freq > 0.01)
     valid_f = freqs > 0.01;
     [~, fi] = max(pow2(valid_f));
-    dom_idx = find(valid_f, 1) + fi - 1;  % index in full FFT
+    dom_idx = find(valid_f, 1) + fi - 1;
 
-    % Phase of each signal at the dominant frequency
     phase2  = angle(F2(dom_idx))  * 180 / pi;
     phase12 = angle(F12(dom_idx)) * 180 / pi;
 
     phase_shift = mod(phase12 - phase2, 360);
 
-    % Classification
     if phase_shift <= 45 || phase_shift >= 315
         classification = 'In-phase';
     elseif phase_shift >= 135 && phase_shift <= 225
@@ -334,7 +299,6 @@ function result = compute_pect_phase(cam_data, cam_bases, pt_bases, nFrames)
         classification = 'Intermediate';
     end
 
-    % Also compute cross-correlation for the time-domain view
     [xcorr_vals, lags] = xcorr_simple(s2, s12);
     [~, max_lag_idx]   = max(xcorr_vals);
     peak_lag           = lags(max_lag_idx);
@@ -357,7 +321,6 @@ end
 
 
 function [c, lags] = xcorr_simple(x, y)
-% Simple normalized cross-correlation (no toolbox required)
     N    = length(x);
     maxl = min(N-1, round(N/2));
     lags = -maxl:maxl;

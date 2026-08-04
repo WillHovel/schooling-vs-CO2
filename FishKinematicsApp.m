@@ -44,10 +44,13 @@ function FishKinematicsApp()
     %% ---- Shared state ----
     app.fp        = [];
     app.kine      = [];
+    app.ext       = [];   % extended body kinematics (body angle, speed, stride, head elevation, roll)
     app.fmt       = '';
     app.avail_pts = {};
     app.sel_order = {};
-    app.fin_data  = [];   % computed fin analysis results
+    app.fin_data     = [];   % computed fin analysis results
+    app.girdle_data  = [];   % computed girdle protraction/retraction results
+    app.stance_data  = [];   % computed stance/swing duty-factor results
     app.pect_data = [];   % pectoral phase result (Format D)
     % Axis mapping: which signed CSV axis maps to each world role.
     % Default = identity (CSV X→top-X, CSV Y→top-Y, CSV Z→vertical).
@@ -285,6 +288,16 @@ function FishKinematicsApp()
         'Position', [674 16 110 30], 'FontSize', 11, ...
         'BackgroundColor', [0.55 0.3 0.1], 'FontColor', [1 1 1], ...
         'ButtonPushedFcn', @(~,~) onAnimateFin());
+    uibutton(finSelPanel, 'Text', 'Girdle', ...
+        'Position', [794 16 90 30], 'FontSize', 11, ...
+        'BackgroundColor', [0.3 0.3 0.6], 'FontColor', [1 1 1], ...
+        'Tooltip', 'Protraction/retraction of the ROOT point (girdle base) in body-relative coordinates', ...
+        'ButtonPushedFcn', @(~,~) onComputeGirdle());
+    uibutton(finSelPanel, 'Text', 'Duty Factor', ...
+        'Position', [894 16 110 30], 'FontSize', 11, ...
+        'BackgroundColor', [0.5 0.2 0.4], 'FontColor', [1 1 1], ...
+        'Tooltip', 'Estimated from fin-tip velocity — a proxy, not a replacement for measured contact time', ...
+        'ButtonPushedFcn', @(~,~) onComputeDutyFactor());
 
     % ---- Tab 3: Pectoral Fin Phase (Format D dual-camera) ----
     tabPect = uitab(tg, 'Title', 'Pectoral Phase (2D)');
@@ -395,6 +408,74 @@ function FishKinematicsApp()
 
     % Run once to settle layout at startup
     onFigResize();
+
+    %% ================================================================
+    %  BATCH PROCESSING TAB
+    %% ================================================================
+    tabBatch = uitab(tg, 'Title', 'Batch Processing');
+
+    app.batchFiles = {};   % cell array of full file paths selected for batch
+
+    batchInfoPanel = uipanel(tabBatch, 'Units', 'normalized', ...
+        'Position', [0 0.93 1 0.06], 'BorderType', 'none', ...
+        'BackgroundColor', [0.95 0.95 0.95], 'AutoResizeChildren', 'off');
+    uilabel(batchInfoPanel, 'Position', [8 2 1100 32], 'FontSize', 12, ...
+        'FontColor', [0.4 0.4 0.6], 'WordWrap', 'on', 'Text', ...
+        ['Process many CSVs of the SAME format in one pass. Loads and computes only — ' ...
+         'no plots are rendered per file (that would be far too slow for a large batch). ' ...
+         'Results stage into the same CSV export you already use, so nothing else changes.']);
+
+    % ---- Left column: file selection + options ----
+    batchLeftPanel = uipanel(tabBatch, 'Units', 'normalized', 'Position', [0 0 0.32 0.93], ...
+        'BorderType', 'line', 'AutoResizeChildren', 'off');
+
+    uibutton(batchLeftPanel, 'Text', 'Select Files...', 'Position', [12 830 160 30], ...
+        'FontSize', 11, 'ButtonPushedFcn', @(~,~) onSelectBatchFiles());
+    app.batchCountLabel = uilabel(batchLeftPanel, 'Position', [180 830 200 30], ...
+        'Text', '0 files selected', 'FontSize', 11, 'FontColor', [0.4 0.4 0.4]);
+
+    app.batchFileList = uilistbox(batchLeftPanel, 'Position', [12 620 356 200], ...
+        'Items', {}, 'FontSize', 9);
+
+    uilabel(batchLeftPanel, 'Position', [12 588 356 20], 'FontSize', 10, ...
+        'FontWeight', 'bold', 'Text', 'Midline points (head → tail, comma-separated):');
+    app.batchPointsField = uieditfield(batchLeftPanel, 'text', 'Position', [12 562 356 26], ...
+        'FontSize', 10, ...
+        'Value', 'BP_1_SnoutML,BP_2_PectoralML,BP_3_PelvicML,BP_4_AnalML,BP_5_CaudalML');
+
+    app.batchForce2D = uicheckbox(batchLeftPanel, 'Position', [12 528 356 22], 'FontSize', 10, ...
+        'Text', 'Force 2D midline (ignore Z, even if present)', 'Value', true, ...
+        'Tooltip', ['Recommended when the batch mixes files that do and don''t have full 3D ' ...
+                    'tracking (e.g. some missing snout Z) — keeps every file in the batch ' ...
+                    'directly comparable instead of some being 2D and some 3D.']);
+
+    uilabel(batchLeftPanel, 'Position', [12 494 356 20], 'FontSize', 10, ...
+        'FontWeight', 'bold', 'Text', 'Also run (uses Root/Tip from Fin Analysis tab):');
+    app.batchRunFin = uicheckbox(batchLeftPanel, 'Position', [12 468 340 22], ...
+        'FontSize', 10, 'Text', 'Fin analysis', 'Value', false);
+    app.batchRunGirdle = uicheckbox(batchLeftPanel, 'Position', [12 444 340 22], ...
+        'FontSize', 10, 'Text', 'Girdle analysis (uses Root point)', 'Value', false);
+    app.batchRunDuty = uicheckbox(batchLeftPanel, 'Position', [12 420 340 22], ...
+        'FontSize', 10, 'Text', 'Duty factor estimate (requires Fin analysis above)', 'Value', false);
+
+    uilabel(batchLeftPanel, 'Position', [12 388 356 34], 'FontSize', 9, 'WordWrap', 'on', ...
+        'FontColor', [0.5 0.5 0.5], 'Text', ...
+        'FPS and Min Frequency are taken from the Kinematics tab — set those first.');
+
+    app.batchRunButton = uibutton(batchLeftPanel, 'Text', 'Run Batch', 'Position', [12 348 160 34], ...
+        'FontSize', 12, 'BackgroundColor', [0.2 0.55 0.3], 'FontColor', [1 1 1], ...
+        'ButtonPushedFcn', @(~,~) onRunBatch());
+
+    app.batchProgressLabel = uilabel(batchLeftPanel, 'Position', [12 318 356 24], ...
+        'FontSize', 10, 'FontColor', [0.4 0.4 0.4], 'Text', '');
+
+    % ---- Right column: scrolling log, one line per file ----
+    batchRightPanel = uipanel(tabBatch, 'Units', 'normalized', 'Position', [0.33 0 0.67 0.93], ...
+        'BorderType', 'line', 'AutoResizeChildren', 'off');
+    app.batchLogArea = uitextarea(batchRightPanel, 'Position', [0 0 400 200], ...
+        'Editable', 'off', 'FontSize', 10, 'FontName', 'Courier New', 'Value', {'(no batch run yet)'});
+    batchRightPanel.SizeChangedFcn = @(src,~) set(app.batchLogArea, ...
+        'Position', [0 0 max(1,src.Position(3)) max(1,src.Position(4))]);
 
     %% ================================================================
     %  CALLBACKS
@@ -706,22 +787,38 @@ function FishKinematicsApp()
                 otherwise
                     uialert(fig, 'Unknown format — browse a file first.', 'Format'); return
             end
-        catch ME; uialert(fig, ME.message, 'Load error'); setStatus('Load failed.'); return; end
+        catch ME; logFullError(ME); uialert(fig, ME.message, 'Load error'); setStatus('Load failed.'); return; end
 
         setStatus('Remapping axes...');
         try
             app.fp = remap_axes(app.fp);
-        catch ME; uialert(fig, ME.message, 'Axis remap error'); setStatus('Failed.'); return; end
+        catch ME; logFullError(ME); uialert(fig, ME.message, 'Axis remap error'); setStatus('Failed.'); return; end
 
         setStatus('Transforming...');
         try
             app.fp = transform_fish(app.fp);
-        catch ME; uialert(fig, ME.message, 'Transform error'); setStatus('Failed.'); return; end
+        catch ME; logFullError(ME); uialert(fig, ME.message, 'Transform error'); setStatus('Failed.'); return; end
 
         setStatus('Computing kinematics...');
         try
             app.kine = compute_kinematics(app.fp, fps, minFreq);
-        catch ME; uialert(fig, ME.message, 'Kinematics error'); setStatus('Failed.'); return; end
+        catch ME; logFullError(ME); uialert(fig, ME.message, 'Kinematics error'); setStatus('Failed.'); return; end
+
+        setStatus('Computing extended body metrics...');
+        try
+            % roll_pair is not wired into the GUI yet (needs a separate
+            % left/right landmark pair, not just head/mid/tail) — roll
+            % will show as N/A in results/CSV until that's added. Call
+            % compute_body_extended directly with a roll_pair argument if
+            % you need roll for a specific analysis outside the GUI.
+            app.ext = compute_body_extended(app.fp, fps, app.kine, {});
+        catch ME
+            % Don't hard-fail the whole run over this — kinematics above
+            % already succeeded and is more important to preserve.
+            logFullError(ME);
+            warning('compute_body_extended failed: %s', ME.message);
+            app.ext = [];
+        end
 
         names = {app.kine.name};
         app.fishList.Items = names;
@@ -784,6 +881,33 @@ function FishKinematicsApp()
         L{end+1} = sprintf('Max curv (XY):      %.4f @ %.3f', k.maxCurv, k.maxCurvLoc);
         if has_z
             L{end+1} = sprintf('Max curv (3D):      %.4f @ %.3f', k.maxCurv3D, k.maxCurv3DLoc);
+        end
+
+        % ---- NEW: Extended body metrics (body angle, speed, stride, head elevation, roll) ----
+        if ~isempty(app.ext) && fi <= numel(app.ext)
+            e = app.ext(fi);
+            L{end+1} = repmat('-',1,34);
+            L{end+1} = sprintf('Body angle:         %.2f \xB1 %.2f deg (range %.2f)', ...
+                                e.mean_body_angle_deg, e.std_body_angle_deg, e.range_body_angle_deg);
+            L{end+1} = sprintf('Speed:              %.4f \xB1 %.4f BL/s (peak %.4f)', ...
+                                e.mean_speed_BL_s, e.std_speed_BL_s, e.peak_speed_BL_s);
+            if isnan(e.stride_length_BL)
+                L{end+1} = 'Stride length:      NaN (needs valid tail_TBF and speed)';
+            else
+                L{end+1} = sprintf('Stride length:      %.4f BL/cycle', e.stride_length_BL);
+            end
+            if has_z
+                L{end+1} = sprintf('Head elevation:     %.2f \xB1 %.2f deg (range %.2f)', ...
+                                    e.mean_head_pitch_deg, e.std_head_pitch_deg, e.range_head_pitch_deg);
+                if e.roll_available
+                    L{end+1} = sprintf('Roll:               %.2f \xB1 %.2f deg (range %.2f)', ...
+                                        e.mean_roll_deg, e.std_roll_deg, e.range_roll_deg);
+                else
+                    L{end+1} = 'Roll:               N/A (needs a left/right point pair — not yet wired into GUI)';
+                end
+            else
+                L{end+1} = 'Head elevation:     N/A (needs 3D data)';
+            end
         end
         app.resultsArea.Value = L;
 
@@ -965,11 +1089,26 @@ function FishKinematicsApp()
 
         csvPath = strtrim(app.fileField.Value);
         fps     = app.fpsField.Value;
+        minFreq = app.minFreqField.Value;
+
+        % Body speed for stride length — from the currently selected fish's
+        % extended metrics, if available. NaN if not computed (e.g. run
+        % failed) — compute_fin_kinematics handles NaN body speed cleanly
+        % (stride_length_BL just comes back NaN too).
+        bodySpeed = NaN;
+        if ~isempty(app.ext) && ~isempty(app.kine) && ~isempty(app.fishList.Items)
+            names = {app.kine.name};
+            fi_sel = find(strcmp(app.fishList.Value, names), 1);
+            if ~isempty(fi_sel) && fi_sel <= numel(app.ext)
+                bodySpeed = app.ext(fi_sel).mean_speed_BL_s;
+            end
+        end
 
         setStatus('Computing fin kinematics...');
         try
-            fd = compute_fin_kinematics(csvPath, rootName, tipName, fps);
+            fd = compute_fin_kinematics(csvPath, rootName, tipName, fps, minFreq, bodySpeed);
         catch ME
+            logFullError(ME);
             uialert(fig, ME.message, 'Fin computation error');
             setStatus('Fin computation failed.'); return
         end
@@ -1003,6 +1142,14 @@ function FishKinematicsApp()
                             fd.mean_ang_vel, fd.std_ang_vel, fd.peak_ang_vel);
         R{end+1} = sprintf('Valid frames:          %d / %d (%.1f%%)', ...
                             fd.n_valid, fd.n_frames, fd.pct_valid);
+        R{end+1} = repmat('-',1,60);
+        R{end+1} = sprintf('Fin freq (yaw):        %s Hz', fmt_nan(fd.fin_freq_Hz));
+        R{end+1} = sprintf('Fin freq (pitch):      %s Hz', fmt_nan(fd.fin_freq_pitch_Hz));
+        R{end+1} = sprintf('Stride length:         %s BL/cycle', fmt_nan(fd.stride_length_BL));
+        R{end+1} = sprintf('Stride duration:       %s s', fmt_nan(fd.stride_duration_s));
+        if isnan(fd.stride_length_BL) && ~isnan(fd.fin_freq_Hz)
+            R{end+1} = '  (stride length needs body speed — run main kinematics first)';
+        end
         app.finResultsArea.Value = R;
 
         % ---- Plot 1: Pitch / Roll / Yaw over time ----
@@ -1080,6 +1227,219 @@ function FishKinematicsApp()
         xlim(app.finAx3D, xl+[-pad3 pad3]);
         ylim(app.finAx3D, yl+[-pad3 pad3]);
         zlim(app.finAx3D, zl+[-pad3 pad3]);
+    end
+
+    % ---- Girdle protraction/retraction (uses the currently selected Root point) ----
+    function onComputeGirdle()
+        if isempty(app.fp) || isempty(app.kine)
+            uialert(fig, 'Run kinematics analysis first.', 'No data'); return
+        end
+        rootName = app.finRootDrop.Value;
+        if contains(rootName, 'N/A') || contains(rootName, 'load file')
+            uialert(fig, 'Named or numbered 3D format required.', 'Format'); return
+        end
+        if ~isfield(app.fp, 'transform_params')
+            uialert(fig, ['This fish_points struct has no transform_params — re-run ' ...
+                           'Load & Analyse with the updated transform_fish.m first.'], 'Missing data');
+            return
+        end
+
+        names  = {app.kine.name};
+        fi_sel = find(strcmp(app.fishList.Value, names), 1);
+        if isempty(fi_sel)
+            uialert(fig, 'Select an animal first.', 'No selection'); return
+        end
+
+        csvPath = strtrim(app.fileField.Value);
+        fps     = app.fpsField.Value;
+        minFreq = app.minFreqField.Value;
+
+        setStatus('Computing girdle kinematics...');
+        try
+            gd = compute_girdle_kinematics(csvPath, rootName, app.fp(fi_sel), fps, minFreq);
+        catch ME
+            logFullError(ME);
+            uialert(fig, ME.message, 'Girdle computation error');
+            setStatus('Girdle computation failed.'); return
+        end
+        app.girdle_data = gd;
+        setStatus('Girdle kinematics done.');
+
+        collect_girdle_row(gd);
+
+        % Append to fin results text (keeps the same panel rather than
+        % adding a whole new tab for one extra metric set)
+        R = app.finResultsArea.Value;
+        R{end+1} = repmat('=',1,60);
+        R{end+1} = sprintf('GIRDLE (%s): %.1f%% frames valid', gd.name, gd.pct_valid);
+        R{end+1} = sprintf('  Protraction/retraction range: %s BL', fmt_nan(gd.protraction_range_BL));
+        R{end+1} = sprintf('  Lateral range:                 %s BL', fmt_nan(gd.lateral_range_BL));
+        R{end+1} = sprintf('  Girdle oscillation freq:        %s Hz', fmt_nan(gd.girdle_freq_Hz));
+        if gd.pct_valid < 50
+            R{end+1} = '  (LOW COVERAGE — treat as a rough estimate)';
+        end
+        app.finResultsArea.Value = R;
+    end
+
+    % ---- Duty factor / contact time (from the LAST computed fin data) ----
+    function onComputeDutyFactor()
+        if isempty(app.fin_data)
+            uialert(fig, 'Compute fin analysis first (Compute Fin button).', 'No data'); return
+        end
+
+        setStatus('Estimating stance/swing...');
+        try
+            st = compute_stance_swing(app.fin_data);
+        catch ME
+            logFullError(ME);
+            uialert(fig, ME.message, 'Duty factor computation error');
+            setStatus('Duty factor computation failed.'); return
+        end
+        app.stance_data = st;
+        setStatus('Duty factor estimate done.');
+
+        collect_stance_row(st, app.fin_data);
+
+        R = app.finResultsArea.Value;
+        R{end+1} = repmat('=',1,60);
+        R{end+1} = sprintf('DUTY FACTOR (velocity-threshold proxy, %s\x2192%s):', ...
+                            app.fin_data.rootName, app.fin_data.tipName);
+        R{end+1} = '  NOTE: this is a kinematic ESTIMATE, not a substitute for measured';
+        R{end+1} = '  contact time/duty factor — treat measured data as ground truth.';
+        R{end+1} = sprintf('  Coverage:        %.1f%% frames usable', st.pct_valid_consecutive);
+        R{end+1} = sprintf('  Contact time:    %s s', fmt_nan(st.mean_contact_time_s));
+        R{end+1} = sprintf('  Swing time:      %s s', fmt_nan(st.mean_swing_time_s));
+        R{end+1} = sprintf('  Duty factor:     %s', fmt_nan(st.duty_factor));
+        R{end+1} = sprintf('  Cycles detected: %d', st.n_cycles);
+        if st.pct_valid_consecutive < 70
+            R{end+1} = '  *** LOW COVERAGE WARNING — verify against measured contact-time data ***';
+        end
+        app.finResultsArea.Value = R;
+    end
+
+    % ---- Batch: pick multiple files of the same format ----
+    function onSelectBatchFiles()
+        [fnames, fpath] = uigetfile({'*.csv','CSV files (*.csv)'}, ...
+            'Select all CSV files for this batch (same format)', 'MultiSelect', 'on');
+        if isequal(fnames, 0), return; end   % user cancelled
+        if ischar(fnames), fnames = {fnames}; end   % single file selected -> wrap in cell
+
+        app.batchFiles = fullfile(fpath, fnames);
+        app.batchFileList.Items = fnames;
+        app.batchCountLabel.Text = sprintf('%d files selected', numel(app.batchFiles));
+    end
+
+    % ---- Batch: run kinematics (+ optional fin/girdle/duty) across all selected files ----
+    function onRunBatch()
+        if isempty(app.batchFiles)
+            uialert(fig, 'Select files first.', 'No files'); return
+        end
+
+        fps     = app.fpsField.Value;
+        minFreq = app.minFreqField.Value;
+        force2D = app.batchForce2D.Value;
+        runFin    = app.batchRunFin.Value;
+        runGirdle = app.batchRunGirdle.Value;
+        runDuty   = app.batchRunDuty.Value;
+
+        midlinePts = strtrim(strsplit(app.batchPointsField.Value, ','));
+        midlinePts = midlinePts(~cellfun(@isempty, midlinePts));
+        if numel(midlinePts) < 3
+            uialert(fig, 'Need at least 3 midline points (head, at least 1 middle, tail).', 'Bad input');
+            return
+        end
+
+        rootName = app.finRootDrop.Value;
+        tipName  = app.finTipDrop.Value;
+        if (runFin || runGirdle) && (contains(rootName,'N/A') || contains(rootName,'load file'))
+            uialert(fig, ['Root/Tip points look unset — go to the Fin Analysis tab, load any ' ...
+                           'one file from this batch to populate the dropdowns, then come back ' ...
+                           'and run the batch.'], 'Fin points not set');
+            return
+        end
+
+        n = numel(app.batchFiles);
+        nOK = 0; nFail = 0;
+        app.batchLogArea.Value = {sprintf('Starting batch: %d files...', n)};
+        drawnow;
+
+        for i = 1:n
+            f = app.batchFiles{i};
+            [~, fname] = fileparts(f);
+            app.batchProgressLabel.Text = sprintf('%d / %d: %s', i, n, fname);
+            drawnow;
+
+            try
+                % ---- Load + transform + kinematics (no plotting) ----
+                fp = load_fish_points_named(f, midlinePts, []);
+                fp = fp(1);
+                if force2D && isfield(fp,'has_z') && fp.has_z
+                    fp.has_z = false;
+                    fp.points = fp.points(:,:,1:2);
+                end
+                fp = transform_fish(fp);
+                kine = compute_kinematics(fp, fps, minFreq);
+                ext  = compute_body_extended(fp, fps, kine, {});
+
+                % ---- Populate app state so the EXISTING collectors can be
+                % reused as-is (they read app.fp/app.kine/app.ext/app.fileField/
+                % app.fishList — none of which trigger any plotting when set
+                % programmatically like this). ----
+                app.fp   = fp;
+                app.kine = kine;
+                app.ext  = ext;
+                app.fmt  = 'named';
+                app.fileField.Value = f;
+                app.fishList.Items = {kine.name};
+                app.fishList.Value = kine.name;
+
+                collect_kine_rows();
+                logLine = sprintf('[%d/%d] %s: OK (%d/%d frames valid, head_TBF=%s Hz)', ...
+                    i, n, fname, sum(~isnan(fp.X(:,1))), size(fp.X,1), fmt_nan(kine.head_TBF));
+
+                % ---- Optional fin / girdle / duty factor ----
+                if runFin
+                    fd = compute_fin_kinematics(f, rootName, tipName, fps, minFreq, ext.mean_speed_BL_s);
+                    app.fin_data = fd;
+                    collect_fin_row(fd);
+                    logLine = [logLine sprintf('  | fin freq=%s Hz', fmt_nan(fd.fin_freq_Hz))]; %#ok<AGROW>
+
+                    if runDuty
+                        st = compute_stance_swing(fd);
+                        collect_stance_row(st, fd);
+                        logLine = [logLine sprintf('  | duty=%s', fmt_nan(st.duty_factor))]; %#ok<AGROW>
+                    end
+                end
+                if runGirdle
+                    gd = compute_girdle_kinematics(f, rootName, fp, fps, minFreq);
+                    collect_girdle_row(gd);
+                    logLine = [logLine sprintf('  | girdle freq=%s Hz', fmt_nan(gd.girdle_freq_Hz))]; %#ok<AGROW>
+                end
+
+                nOK = nOK + 1;
+            catch ME
+                logFullError(ME);   % full trace still goes to command window
+                logLine = sprintf('[%d/%d] %s: FAILED — %s', i, n, fname, ME.message);
+                nFail = nFail + 1;
+            end
+
+            L = app.batchLogArea.Value;
+            if isequal(L, {sprintf('Starting batch: %d files...', n)})
+                L = {};   % clear the placeholder on first real line
+            end
+            L{end+1} = logLine;
+            app.batchLogArea.Value = L;
+            % Keep the view scrolled to the latest line
+            drawnow;
+        end
+
+        app.batchProgressLabel.Text = sprintf('Done: %d OK, %d failed (of %d)', nOK, nFail, n);
+        setStatus(sprintf('Batch complete: %d OK, %d failed. %d row(s) staged — use Export CSV.', ...
+                           nOK, nFail, numel(app.csv_rows)));
+        L = app.batchLogArea.Value;
+        L{end+1} = repmat('=',1,50);
+        L{end+1} = sprintf('DONE: %d OK, %d failed. %d row(s) staged for export.', nOK, nFail, numel(app.csv_rows));
+        app.batchLogArea.Value = L;
     end
 
     % ---- Fin animation in a new figure ----
@@ -1430,6 +1790,35 @@ function FishKinematicsApp()
                 r.max_curv_3D_loc = k.maxCurv3DLoc;
             end
 
+            % ---- NEW: Extended body metrics ----
+            r.body_angle_mean_deg  = NaN; r.body_angle_std_deg   = NaN; r.body_angle_range_deg = NaN;
+            r.speed_mean_BL_s      = NaN; r.speed_std_BL_s       = NaN; r.speed_peak_BL_s      = NaN;
+            r.stride_length_BL     = NaN;
+            r.head_pitch_mean_deg  = NaN; r.head_pitch_std_deg   = NaN; r.head_pitch_range_deg = NaN;
+            r.roll_mean_deg        = NaN; r.roll_std_deg         = NaN; r.roll_range_deg       = NaN;
+            r.roll_available       = 'false';
+            if ~isempty(app.ext) && fi <= numel(app.ext)
+                e = app.ext(fi);
+                r.body_angle_mean_deg = e.mean_body_angle_deg;
+                r.body_angle_std_deg  = e.std_body_angle_deg;
+                r.body_angle_range_deg = e.range_body_angle_deg;
+                r.speed_mean_BL_s     = e.mean_speed_BL_s;
+                r.speed_std_BL_s      = e.std_speed_BL_s;
+                r.speed_peak_BL_s     = e.peak_speed_BL_s;
+                r.stride_length_BL    = e.stride_length_BL;
+                if has_z
+                    r.head_pitch_mean_deg  = e.mean_head_pitch_deg;
+                    r.head_pitch_std_deg   = e.std_head_pitch_deg;
+                    r.head_pitch_range_deg = e.range_head_pitch_deg;
+                    r.roll_available       = mat2str(e.roll_available);
+                    if e.roll_available
+                        r.roll_mean_deg  = e.mean_roll_deg;
+                        r.roll_std_deg   = e.std_roll_deg;
+                        r.roll_range_deg = e.range_roll_deg;
+                    end
+                end
+            end
+
             % ---- Row type tag ----
             r.row_type = 'kinematics';
 
@@ -1496,7 +1885,77 @@ function FishKinematicsApp()
         r.fin_n_valid_frames   = fd.n_valid;
         r.fin_pct_valid        = fd.pct_valid;
 
+        % ---- NEW: fin beat frequency and stride ----
+        r.fin_freq_Hz          = fd.fin_freq_Hz;
+        r.fin_freq_pitch_Hz    = fd.fin_freq_pitch_Hz;
+        r.fin_stride_length_BL = fd.stride_length_BL;
+        r.fin_stride_duration_s = fd.stride_duration_s;
+
         r.row_type = 'fin_kinematics';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_girdle_row(gd)
+    % Build one flat row from girdle kinematics results and stage it.
+        if nargin < 1 || isempty(gd), return; end
+        timestamp   = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+        animalName  = '';
+        if ~isempty(app.fishList.Items) && ~strcmp(app.fishList.Items{1}, '(run analysis first)')
+            animalName = app.fishList.Value;
+        end
+
+        r = struct();
+        r.timestamp   = timestamp;
+        r.source_file = strtrim(app.fileField.Value);
+        r.animal      = animalName;
+        r.data_format = 'girdle';
+        r.fps         = app.fpsField.Value;
+        r.n_frames    = gd.n_frames;
+
+        r.girdle_point                = gd.name;
+        r.girdle_protraction_range_BL = gd.protraction_range_BL;
+        r.girdle_lateral_range_BL     = gd.lateral_range_BL;
+        r.girdle_freq_Hz              = gd.girdle_freq_Hz;
+        r.girdle_n_valid_frames       = gd.n_valid;
+        r.girdle_pct_valid            = gd.pct_valid;
+
+        r.row_type = 'girdle_kinematics';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_stance_row(st, fd)
+    % Build one flat row from stance/swing (duty factor) results and stage it.
+        if nargin < 1 || isempty(st), return; end
+        timestamp   = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+        animalName  = '';
+        if ~isempty(app.fishList.Items) && ~strcmp(app.fishList.Items{1}, '(run analysis first)')
+            animalName = app.fishList.Value;
+        end
+
+        r = struct();
+        r.timestamp   = timestamp;
+        r.source_file = strtrim(app.fileField.Value);
+        r.animal      = animalName;
+        r.data_format = 'stance_swing_estimate';
+        r.fps         = app.fpsField.Value;
+        if nargin >= 2 && ~isempty(fd)
+            r.head_point = fd.rootName;   % re-use these columns to record root/tip for this row
+            r.tail_point = fd.tipName;
+        end
+
+        r.stance_threshold_used      = st.threshold_used;
+        r.stance_mean_contact_time_s = st.mean_contact_time_s;
+        r.stance_mean_swing_time_s   = st.mean_swing_time_s;
+        r.stance_duty_factor         = st.duty_factor;
+        r.stance_n_cycles            = st.n_cycles;
+        r.stance_pct_valid_consecutive = st.pct_valid_consecutive;
+        r.stance_is_estimate_not_measured = 'TRUE';   % explicit flag — never confuse with real contact-time data (string, not logical — write_csv_rows only recognizes char/string/numeric)
+
+        r.row_type = 'stance_swing_estimate';
 
         app.csv_rows{end+1} = r;
         updateCSVLabel();
@@ -1570,6 +2029,7 @@ function FishKinematicsApp()
             updateCSVLabel();
             setStatus(sprintf('Exported %d row(s) → %s', n, app.csv_path));
         catch ME
+            logFullError(ME);
             uialert(fig, ME.message, 'Export failed');
         end
     end
@@ -1665,6 +2125,28 @@ function FishKinematicsApp()
 
     function setStatus(msg)
         app.statusLabel.Text = msg; drawnow;
+    end
+
+    function s = fmt_nan(v)
+    % Display NaN plainly rather than a formatted-looking "NaN" number,
+    % consistent with the NaN-propagation convention used throughout the
+    % underlying compute_* functions (see prior fixes to compute_kinematics,
+    % compute_fin_kinematics, etc. — NaN should always read as NaN, never
+    % be silently formatted to look like a real value).
+        if isnan(v), s = 'NaN'; else, s = sprintf('%.4f', v); end
+    end
+
+    function logFullError(ME)
+    % Print the FULL error report (file names, line numbers, full call
+    % stack) to the command window. uialert() only shows ME.message, which
+    % is often too short to actually locate a bug (e.g. MATLAB's generic
+    % "Unable to perform assignment because the left and right sides have
+    % a different number of elements" gives zero indication of WHICH line
+    % triggered it). This makes every error in the app self-diagnosing —
+    % check the command window after any error dialog for the real trace.
+        fprintf(2, '\n========== FULL ERROR REPORT ==========\n');
+        fprintf(2, '%s\n', getReport(ME, 'extended', 'hyperlinks', 'off'));
+        fprintf(2, '========================================\n\n');
     end
 
     function y_out = section_label(parent, txt, y_in)

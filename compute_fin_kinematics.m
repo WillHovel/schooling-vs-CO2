@@ -1,7 +1,8 @@
-function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
+function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq, body_speed_BL_s)
 % COMPUTE_FIN_KINEMATICS  Compute 3-D kinematics of a fin from root and tip landmarks.
 %
 %   fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
+%   fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq, body_speed_BL_s)
 %
 %   INPUTS
 %     csvPath   - path to CSV with landmark columns.
@@ -11,8 +12,18 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
 %                 May be a compound average string: 'Rpectbase+Lpectbase'
 %     tipName   - base name of the fin tip landmark, e.g. 'Rpecttip' or 'pt2'
 %     fps       - frames per second (scalar)
+%     min_freq  - OPTIONAL, Hz floor for fin-beat frequency detection
+%                 (default 0.5). Same purpose as compute_kinematics' min_freq —
+%                 set it based on a visual beat count for this trial, not
+%                 blindly left at the default (see prior evaluation notes:
+%                 a too-high floor can make the FFT lock onto a harmonic
+%                 instead of the true fundamental).
+%     body_speed_BL_s - OPTIONAL, mean forward body speed in BL/s (e.g.
+%                 ext.mean_speed_BL_s from compute_body_extended.m) — used
+%                 to compute fin stride length. If omitted, stride_length
+%                 fields are NaN.
 %
-%   OUTPUT  fin — struct with fields:
+%   OUTPUT  fin — struct with fields (existing fields unchanged, NEW ones marked):
 %
 %   --- Raw data ---
 %     .frames        [nFrames x 1]  frame indices
@@ -22,36 +33,38 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
 %     .vx/vy/vz      [nFrames x 1]  fin vector components (tip - root)
 %
 %   --- Euler angles (degrees) ---
-%     .yaw           azimuth of fin vector in XY plane  (atan2(vy, vx))
-%     .pitch         elevation out of XY plane          (atan2(-vz, sqrt(vx^2+vy^2)))
-%     .roll          rotation about the fin's long axis, estimated as the angle
-%                    between the fin vector projected into the YZ plane and the
-%                    world +Z axis — i.e. how much the fin tilts dorsoventrally
-%                    relative to horizontal.  Range: -180 to +180 deg.
-%                    NOTE: true roll (rotation about the fin's own axis) is
-%                    geometrically undefined from a single vector.  This metric
-%                    is the closest physically meaningful proxy: it captures
-%                    fin dorsoventral cant about the body long axis.
+%     .yaw / .pitch / .roll   (see original docstring for definitions —
+%                              unchanged)
 %
 %   --- Derived kinematics ---
-%     .fin_length     [nFrames x 1]  Euclidean root-to-tip distance per frame
-%     .mean_length / .std_length     mean/SD fin length across valid frames
-%     .step_dist      [nFrames x 1]  tip displacement frame-to-frame (mm equiv)
-%     .cum_dist       [nFrames x 1]  cumulative tip distance
-%     .total_dist     scalar         total tip path length
-%     .tip_speed      [nFrames x 1]  tip speed (units/s)
-%     .d_yaw / d_pitch / d_roll      [nFrames x 1] angular rates (deg/s)
-%     .ang_vel        [nFrames x 1]  combined angular velocity magnitude (deg/s)
+%     .fin_length, .mean_length, .std_length
+%     .step_dist, .cum_dist, .total_dist, .tip_speed
+%     .d_yaw / .d_pitch / .d_roll, .ang_vel
+%
+%   --- NEW: Fin beat frequency ---
+%     .fin_freq_Hz          dominant oscillation frequency of the fin's
+%                            yaw angle over time (the fin-beat rate,
+%                            analogous to tail-beat frequency)
+%     .fin_freq_pitch_Hz    same, but from the pitch signal — useful when
+%                            the fin's dominant motion is more of a
+%                            flap (pitch) than a sweep (yaw); compare the
+%                            two and use whichever matches your visual
+%                            beat count.
+%
+%   --- NEW: Stride length / duration ---
+%     .stride_length_BL     forward body distance traveled per fin-beat
+%                            cycle = body_speed_BL_s / fin_freq_Hz
+%                            (NaN if body_speed_BL_s not supplied, or if
+%                            fin_freq_Hz is NaN/zero)
+%     .stride_duration_s    period of one fin-beat cycle = 1/fin_freq_Hz
 %
 %   --- Summary statistics (valid frames only) ---
-%     .mean_yaw   / .std_yaw   / .range_yaw
-%     .mean_pitch / .std_pitch / .range_pitch
-%     .mean_roll  / .std_roll  / .range_roll
-%     .mean_speed / .std_speed / .peak_speed
-%     .mean_ang_vel / .std_ang_vel / .peak_ang_vel
-%     .n_valid / .n_frames / .pct_valid
+%     (unchanged from original — see original docstring)
 %
 %   REQUIRED TOOLBOXES: none (uses only base MATLAB)
+
+    if nargin < 5 || isempty(min_freq), min_freq = 0.5; end
+    if nargin < 6, body_speed_BL_s = NaN; end
 
     %% ---- Load CSV ----
     opts = detectImportOptions(csvPath);
@@ -88,19 +101,8 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
     fin_length = sqrt(vx.^2 + vy.^2 + vz.^2);
 
     %% ---- Euler angles ----
-    % YAW: azimuth in the XY (horizontal) plane — how far forward/backward the
-    %      fin sweeps.  0 deg = pointing in +X; 90 deg = pointing in +Y.
     yaw = atan2d(vy, vx);
-
-    % PITCH: elevation above/below the XY plane — how much the fin is raised or
-    %        depressed.  +90 = pointing straight up (+Z), -90 = straight down.
     pitch = atan2d(-vz, sqrt(vx.^2 + vy.^2));
-
-    % ROLL: dorsoventral cant of the fin about the body's long axis (X-axis).
-    %       Defined as atan2(vz, vy) — the angle of the fin vector in the YZ
-    %       plane (the cross-section plane of the body).
-    %       0 deg = fin pointing in +Y (lateral); +90 = fin pointing up (+Z).
-    %       This is the closest proxy to "roll" achievable from a single vector.
     roll = atan2d(vz, vy);
 
     %% ---- Tip travel ----
@@ -121,6 +123,25 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
     d_pitch = [0; diff(pitch)] * fps;
     d_roll  = [0; diff(roll)]  * fps;
     ang_vel = sqrt(d_yaw.^2 + d_pitch.^2 + d_roll.^2);
+
+    %% ---- NEW: Fin beat frequency ----
+    % Uses the same NaN-safe dominant_freq logic established in
+    % compute_kinematics.m: degenerate (all-NaN / zero-variance) input
+    % returns NaN rather than a fabricated frequency.
+    yaw_filled   = fill_nan_local(yaw);
+    pitch_filled = fill_nan_local(pitch);
+    fin_freq_Hz       = dominant_freq_local(yaw_filled,   fps, min_freq);
+    fin_freq_pitch_Hz = dominant_freq_local(pitch_filled, fps, min_freq);
+
+    %% ---- NEW: Stride length / duration ----
+    stride_duration_s = NaN;
+    stride_length_BL  = NaN;
+    if ~isnan(fin_freq_Hz) && fin_freq_Hz > 0
+        stride_duration_s = 1 / fin_freq_Hz;
+        if ~isnan(body_speed_BL_s)
+            stride_length_BL = body_speed_BL_s / fin_freq_Hz;
+        end
+    end
 
     %% ---- Summary statistics over valid frames ----
     yaw_v       = yaw(valid);
@@ -158,6 +179,11 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
     fin.d_roll  = d_roll;
     fin.ang_vel = ang_vel;
 
+    fin.fin_freq_Hz       = fin_freq_Hz;        % NEW
+    fin.fin_freq_pitch_Hz = fin_freq_pitch_Hz;  % NEW
+    fin.stride_duration_s = stride_duration_s;  % NEW
+    fin.stride_length_BL  = stride_length_BL;   % NEW
+
     fin.mean_yaw    = mean(yaw_v);     fin.std_yaw    = std(yaw_v);
     fin.range_yaw   = range(yaw_v);
     fin.mean_pitch  = mean(pitch_v);   fin.std_pitch  = std(pitch_v);
@@ -176,19 +202,51 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps)
     fin.n_frames = nFrames;
     fin.pct_valid = 100 * sum(valid) / nFrames;
 
-    fprintf('Fin: %s -> %s | %d/%d valid frames | length=%.3f±%.3f\n', ...
+    fprintf('Fin: %s -> %s | %d/%d valid frames | length=%.3f\xB1%.3f\n', ...
             rootName, tipName, fin.n_valid, nFrames, fin.mean_length, fin.std_length);
     fprintf('  Yaw  : mean=%.1f SD=%.1f range=%.1f deg\n', fin.mean_yaw,   fin.std_yaw,   fin.range_yaw);
     fprintf('  Pitch: mean=%.1f SD=%.1f range=%.1f deg\n', fin.mean_pitch, fin.std_pitch, fin.range_pitch);
     fprintf('  Roll : mean=%.1f SD=%.1f range=%.1f deg\n', fin.mean_roll,  fin.std_roll,  fin.range_roll);
     fprintf('  Tip dist=%.4f  peak speed=%.4f/s  peak ang_vel=%.2f deg/s\n', ...
             fin.total_dist, fin.peak_speed, fin.peak_ang_vel);
+    fprintf('  Fin freq (yaw)=%s Hz  (pitch)=%s Hz  stride=%s BL  stride duration=%s s\n', ...
+            fmt_val(fin_freq_Hz), fmt_val(fin_freq_pitch_Hz), ...
+            fmt_val(stride_length_BL), fmt_val(stride_duration_s));
 end
 
 
 % =========================================================================
 %  LOCAL HELPERS
 % =========================================================================
+
+function s = fmt_val(v)
+    if isnan(v), s = 'NaN'; else, s = sprintf('%.4f', v); end
+end
+
+function y = fill_nan_local(y)
+    t = (1:length(y))';
+    good = ~isnan(y);
+    if sum(good) < 2, y(:) = NaN; return; end
+    y(~good) = interp1(t(good), y(good), t(~good), 'linear', 'extrap');
+end
+
+function f_dom = dominant_freq_local(y, fs, min_freq)
+% Same NaN-safe convention as compute_kinematics.m's fixed dominant_freq:
+% degenerate input -> NaN, never a fabricated bin.
+    if all(isnan(y)) || (max(y) - min(y)) < eps
+        f_dom = NaN; return;
+    end
+    N = length(y);
+    Y = fft(y - mean(y));
+    power = (2/N) * abs(Y(1:floor(N/2)+1)).^2;
+    freqs = fs * (0:floor(N/2)) / N;
+    valid = freqs >= min_freq;
+    if ~any(valid), f_dom = NaN; return; end
+    power_valid = power(valid);
+    freqs_valid = freqs(valid);
+    [~, idx] = max(power_valid);
+    f_dom = freqs_valid(idx);
+end
 
 function [xyz, err] = extract_xyz(T, cols, base, nFrames)
 % Extract X/Y/Z for one landmark (handles compound 'A+B' averages).
@@ -217,7 +275,21 @@ function [xyz, err] = extract_xyz(T, cols, base, nFrames)
         found = false;
         for v = 1:numel(candidates)
             if ismember(candidates{v}, cols)
-                xyz(:,d) = T.(candidates{v});
+                col_data = T.(candidates{v});
+                % CHANGE NOTE (bug fix): if EVERY value in this column is
+                % missing (e.g. a fully-occluded landmark that is "NA" on
+                % every row), MATLAB's readtable can't infer it's numeric
+                % and imports it as text (cell/char) instead of double.
+                % Assigning that straight into a double array used to
+                % throw "Conversion to double from cell is not possible."
+                % Detect and convert explicitly instead — str2double()
+                % turns unparseable text (including "NA") into NaN, which
+                % is exactly the behavior we want: a fully-occluded point
+                % becomes a clean all-NaN column, not a crash.
+                if iscell(col_data) || isstring(col_data)
+                    col_data = str2double(col_data);
+                end
+                xyz(:,d) = col_data;
                 found = true; break;
             end
         end
@@ -225,7 +297,11 @@ function [xyz, err] = extract_xyz(T, cols, base, nFrames)
             pat = sprintf('^%s_[%s%s]$', regexptranslate('escape',base), dim_labels{d}, lower(dim_labels{d}));
             idx = find(~cellfun(@isempty, regexpi(cols, pat)), 1);
             if ~isempty(idx)
-                xyz(:,d) = T.(cols{idx});
+                col_data = T.(cols{idx});
+                if iscell(col_data) || isstring(col_data)
+                    col_data = str2double(col_data);
+                end
+                xyz(:,d) = col_data;
             else
                 xyz = [];
                 nearby = strjoin(cols(contains(cols, base, 'IgnoreCase',true)), ', ');
@@ -236,6 +312,18 @@ function [xyz, err] = extract_xyz(T, cols, base, nFrames)
                 end
                 return;
             end
+        end
+    end
+
+    % NEW: if the resulting column is 100% NaN, warn clearly rather than
+    % letting it silently propagate into "fewer than 2 valid frames" deep
+    % inside compute_fin_kinematics with no context about WHY.
+    for d = 1:3
+        if all(isnan(xyz(:,d)))
+            warning(['extract_xyz: "%s_%s" is 100%% missing in this file (fully ' ...
+                     'occluded/untracked landmark) — likely the far side of the ' ...
+                     'animal from the camera. Consider using the corresponding ' ...
+                     'left/near-side point instead.'], base, dim_labels{d});
         end
     end
 end

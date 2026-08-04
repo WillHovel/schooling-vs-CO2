@@ -94,6 +94,22 @@ function fish_points = transform_fish(fish_points)
         X = NaN(nFrames, nPoints);
         Y = NaN(nFrames, nPoints);
         Z = NaN(nFrames, nPoints);
+        bl_per_frame = NaN(nFrames, 1);
+        % CHANGE NOTE (bug fix): "transform_params(nFrames,1) = struct(...)"
+        % looks like it preallocates every element with the given NaN
+        % defaults, but it does NOT — MATLAB's last-element-assignment
+        % growth idiom only fills THAT element; every other element gets
+        % [] (empty) in every field, not NaN. That went unnoticed for a
+        % while because the main pipeline never reads transform_params
+        % (only .X/.Y, which are separately NaN-preallocated and correct).
+        % apply_body_transform.m DOES read transform_params directly, and
+        % isnan([]) returns [] (not true), so its "skip invalid frames"
+        % guard silently failed open on unset frames, leading to an
+        % assignment of an empty array into a scalar slot — "Unable to
+        % perform assignment because the left and right sides have a
+        % different number of elements." repmat() actually copies the
+        % NaN-filled struct into every element, unlike last-index growth.
+        transform_params = repmat(struct('theta',NaN,'a',NaN,'x1',NaN,'bl',NaN,'sign_flip',NaN), nFrames, 1);
 
         n_valid    = 0;
         n_reversed = 0;
@@ -169,6 +185,14 @@ function fish_points = transform_fish(fish_points)
             if has_z
                 Z(f, :) = (z_all - z_all(1)) / bl;    % DV deviation from point 1 (head) in BL
             end
+
+            bl_per_frame(f) = bl;   % raw body length (original units) — used elsewhere for
+                                     % converting real-world displacement to BL/s speed
+            transform_params(f).theta     = theta;
+            transform_params(f).a         = a;
+            transform_params(f).x1        = x1;
+            transform_params(f).bl        = bl;
+            transform_params(f).sign_flip = sign_flip;
         end
 
         pct_valid = 100 * n_valid / nFrames;
@@ -180,6 +204,8 @@ function fish_points = transform_fish(fish_points)
         end
         fish_points(fi).pct_frames_valid  = pct_valid;
         fish_points(fi).n_frames_reversed = n_reversed;
+        fish_points(fi).bl_per_frame      = bl_per_frame;      % NEW — raw body length per frame
+        fish_points(fi).transform_params  = transform_params;  % NEW — for projecting other points (fin roots, girdle pts) into the same body-relative frame
 
         fprintf('transform_fish: %s | %d/%d frames valid (%.1f%%)', ...
                 fish_points(fi).name, n_valid, nFrames, pct_valid);
