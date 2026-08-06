@@ -1,0 +1,886 @@
+---
+title: "Analysis"
+author: "EGoerig"
+date: "December 3rd 2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=12, fig.height=12)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. 
+
+R.Version()
+
+# Importation of data 
+
+The MegakineMorpho is a dataset comprising both measured kinematics and morphometrics data. Since the morphometrics were measured on only 1-3 museum specimens for each species, they are the same for each species. The kinematics were measured for each tested fish.
+Based on these data, we calculated the fineness ratio, and the specific wavelength.
+```{r}
+rm(list=ls())
+
+library(plyr)
+library(dplyr)
+
+# Import datasets & get rid of extra column
+Megakine <- read.csv("D:/Mega kinematic all videos/Analysis/Megakine.csv")
+Megakine <- Megakine[,2:32]
+
+Morpho <- read.csv("D:/Mega kinematic all videos/Morphometrics/resultsMeansSE.csv")
+Morpho <- Morpho[,2:42]
+
+# Uniformize species names format
+Morpho$species<-gsub(" ","_",Morpho$species)
+Megakine$species<-gsub(" ","_",Megakine$species)
+
+# check if species spelling is similar between datasets
+setdiff(unique(Megakine$species),unique(Morpho$species))
+Morpho[46,1]='Danio_rerio'
+setdiff(unique(Morpho$species),unique(Megakine$species))
+
+# Merge morphometrics and kinematics data, based on species.
+MegakineMorpho<- merge(Megakine, Morpho, by="species")
+
+# Save dataset in working directory
+library("xlsx")
+write.xlsx(MegakineMorpho, file = "MegakineMorpho.xlsx",
+           sheetName = "AllData", append = FALSE)
+write.csv(MegakineMorpho, file='MegakineMorpho.csv')
+```
+
+# Creation of new variables.
+```{r echo=FALSE}
+
+
+# import artificial categories of swimming mode, determined based on knowledge and published literature.
+library(readxl)
+library(dplyr)
+Swimmingmode <- read_excel("D:/Mega kinematic all videos/Analysis/Swimmingmode.xlsx")
+
+
+# calculate fineness ratios
+# f is ratio of standard length to geometric mean of body depth and breadth
+library(dplyr)
+MegakineMorpho <- mutate(MegakineMorpho, flateral = standard_length/max_depth, fdorsal=standard_length/max_width, f1= standard_length/(sqrt(max_depth*max_width)),rd=sqrt(max_depth), rb=sqrt(max_width),f=standard_length/((3*(rd+rb))-sqrt((rd+3*rb)*(rb+3*rd))))
+
+# Calculate specific wavelength (SW), as in Nangia et al. 2017
+# SW = Wavelength / tail amplitude (a)
+MegakineMorpho <- mutate(MegakineMorpho, SW=wavelength/tailAmp)
+hist(MegakineMorpho$SW)
+summary(MegakineMorpho$SW)
+
+
+```
+
+
+# Descriptive statistics on kinematics
+
+```{r}
+# Descriptive
+library(dplyr)
+species <- select(MegakineMorpho, "species", "Swimmingmode")
+library(vtree)
+vtree(Megakine, "Swimmingmode")
+vtree(species, "Swimmingmode")
+
+
+headAmp <- 
+ MegakineMorpho %>% 
+  dplyr::group_by(species, Swimmingmode) %>% 
+  dplyr::summarize(n=n(),min=min(headAmp), max=max(headAmp), mean = mean(headAmp), median=median(headAmp),sd=sd(headAmp))
+headAmp <- arrange(headAmp, mean)
+
+summary(MegakineMorpho$tailAmp)
+tailAmp <- 
+ MegakineMorpho %>% 
+  dplyr::group_by(species, Swimmingmode) %>% 
+  dplyr::summarize(n=n(),min=min(tailAmp), max=max(tailAmp), mean = mean(tailAmp), median=median(tailAmp),sd=sd(tailAmp))
+tailAmp <- arrange(tailAmp, mean)
+
+summary(MegakineMorpho$maxAmp)
+maxAmp <- 
+ MegakineMorpho %>% 
+  dplyr::group_by(species, Swimmingmode) %>% 
+  dplyr::summarize(n=n(),min=min(maxAmp), max=max(maxAmp), mean = mean(maxAmp), median=median(maxAmp),sd=sd(maxAmp))
+maxAmp <- arrange(maxAmp, mean)
+
+
+headtailamp <- 
+ MegakineMorpho %>% 
+  dplyr::group_by(species, Swimmingmode) %>% 
+  dplyr::summarize(n=n(),min=min(headtailamp), max=max(headtailamp), mean = mean(headtailamp), median=median(headtailamp),sd=sd(headtailamp))
+headtailamp <- arrange(headtailamp, mean)
+summary(headtailamp$median)
+IQR(headtailamp$median)
+
+summary(MegakineMorpho$wavelength)
+wavelength <- 
+ MegakineMorpho %>% 
+  dplyr::group_by(species) %>% 
+  dplyr::summarize(n=n(),min=min(wavelength), max=max(wavelength), mean = mean(wavelength), median=median(wavelength),sd=sd(wavelength))
+wavelength <- arrange(wavelength, median)
+boxplot(wavelength~Swimmingmode, data=MegakineMorpho)
+hist(MegakineMorpho$wavelength)
+
+MegakineMorpho %>%
+  group_by(Swimmingmode) %>%
+  summarise_at(vars(wavelength), funs(median(., na.rm=TRUE)))
+
+
+summary(MegakineMorpho$maxcurv)
+maxcurv <- 
+ MegakineMorpho %>% 
+  dplyr::group_by(species) %>% 
+  dplyr::summarize(n=n(),min=min(maxcurv), max=max(maxcurv), mean = mean(maxcurv), median=median(maxcurv),sd=sd(maxcurv))
+maxcurv <- arrange(maxcurv, mean)
+boxplot(maxcurv~Swimmingmode, data=MegakineMorpho)
+
+MegakineMorpho %>%
+  group_by(Swimmingmode) %>%
+  
+  summarise_at(vars(maxcurv), funs(mean(., na.rm=TRUE)))
+
+# UsBL
+MegakineMorpho %>%
+  group_by(Swimmingmode) %>%
+  summarise_at(vars(UsBL), funs(mean(., na.rm=TRUE)))
+summary(MegakineMorpho$UsBL)
+
+# 4 model species
+Modelspecies <- subset(MegakineMorpho,species=='Anguilla_rostrata'&species=='Scomber_scombrus'&species=='Salvelinus_fontinalis'&species=='Thunnus_albacares')
+Modelspecies <- MegakineMorpho %>% filter(
+  species %in% c("Anguilla_rostrata", "Scomber_scombrus","Salvelinus_fontinalis","Thunnus_albacares")
+  )
+
+summary(Modelspecies$wavelength)
+
+# Reynolsd numbers
+summary(MegakineMorpho$Re)
+IQR(MegakineMorpho$Re)
+
+#Strouhal nummbers
+summary(MegakineMorpho$St)
+IQR(MegakineMorpho$St)
+
+# save files for figures
+library(openxlsx)
+write.xlsx(headAmp, "headamp.xlsx")
+write.xlsx(headtailamp, "headtailamp.xlsx")
+write.xlsx(tailAmp, "tailamp.xlsx")
+write.xlsx(Modelspecies, "Modelspecies.xlsx")
+
+```
+# Save plots functions
+```{r}
+savePlot <- function(myPlot) {
+        pdf("myPlot.pdf")
+        print(myPlot)
+        dev.off()
+}
+```
+
+
+# Correlation matrix
+The correlation matrix shows us how the different variables are correlated to each others. I exclude here all morphometrics variables related to the anterior and middle part of the body, keeping maximum depth and width as well as width and depth at 90% of the body (peduncle). We can decide to do differently. 
+ 
+```{r, echo=FALSE}
+library(Hmisc) 
+library(corrplot)
+library(dplyr)
+  
+# Correlation matrix with a reduced dataset
+b <- select(MegakineMorpho, "maxcurv","UgBL","UsBL","TBF","SL","headAmp","tailAmp","maxAmp","headtailamp","Re","St","wavelength","max_width","width90","max_depth","depth90","f")
+colnames(b) <- c("Curvature","Groundspeed","Swimspeed","Tailbeat frequency","Stride length","Head amp"," Tail amp","Max amp", "Head:tail amp","Reynolds","Strouhal", "Wavelength","Body width","Peduncle width","Body depth","Peduncle depth", "Fineness ratio")
+#str(b)
+  res <- rcorr(as.matrix(b)) 
+#windows()
+pdf(file = "CorrelationMatrix.pdf")
+res$P<-ifelse(is.na(res$P),1,res$P)
+corplot <- corrplot(res$r, type="upper", order="hclust", 
+           p.mat = res$P, sig.level = 0.05, insig = "blank",tl.cex=1,
+         tl.col = "black")
+dev.off()
+#ggsave(plot= corplot, width = 15, height = 10, dpi = 600, filename = "CorrelationMatrix.pdf")
+
+    
+```
+
+# Visual explorations of data & effect of swim speed on kinematics
+```{r}
+# sample size per species
+
+n <- MegakineMorpho %>% group_by(species)%>%
+  summarise(n = n())
+
+Us <- select(MegakineMorpho, "lab", "UsBL", "Re", "species")
+Us <- na.omit(Us)
+Us <- Us %>% group_by(lab)%>%
+  summarise(minUs = min(UsBL), maxUs=max(UsBL), meanRe=mean(Re))
+summary(MegakineMorpho$Re)
+library(ggplot2)
+library(ggpubr)
+a <- ggplot(MegakineMorpho, aes(UsBL, headAmp)) + 
+  geom_point()+expand_limits(y= c(0, 0.4), x=c(0,30))+xlab("Swim speed (BL/s)")+ ylab("Head amplitude (% of body length)")
+a+theme_pubr(base_size = 25, base_family = "", border = FALSE,
+  margin = TRUE)
+ggsave(plot = a, width = 12, height = 6, dpi = 600, filename = "USBL_headAmp.pdf")
+
+b <-  ggplot(MegakineMorpho, aes(UsBL, wavelength, colour = "black")) + 
+  geom_point()
+
+b+theme_pubr()
+
+# Amplitude variations
+summary(MegakineMorpho$headAmp)
+headamp_sd <- sd(MegakineMorpho$headAmp)
+
+summary(MegakineMorpho$headtailamp)
+summary(MegakineMorpho$maxAmploc)
+
+# Plot of ST vs Re, for all fish
+MegakineMorpho$Swimmingmode <- as.factor(MegakineMorpho$Swimmingmode)
+target <- c("Anguilliform","Sub-carangiform", "Carangiform", "Thunniform")
+require(gdata)
+MegakineMorpho$Swimmingmode <- reorder.factor(MegakineMorpho$Swimmingmode, new.order=target)
+levels(MegakineMorpho$Swimmingmode) <- c("Anguilliform","Sub-carangiform", "Carangiform", "Thunniform")
+
+
+  StRe <- ggplot(MegakineMorpho, aes(x = Re, y = St)) +
+  geom_point(aes(color = Swimmingmode)) +
+  xlab("\n Reynold number ")+
+    ylab("Strouhal number\n")+
+     theme(
+    strip.background = element_blank())+
+  scale_color_manual(values=c("#A50026","#313695","#FDAE61", "#74ADD1"))+
+  theme_classic()+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank())+
+  theme(legend.text = element_text(size=15),legend.title = element_blank(),legend.position = "top",
+        axis.title.x=element_text(size=15),
+        axis.title.y=element_text(size=15),
+        axis.text.x=element_text(size=15),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 15)
+  )
+StRe
+ggsave(filename="FigureX2_StRe.pdf", width = 10, height = 6, dpi = 600,plot=StRe)
+ggsave(filename="FigureX2_StRe.jpg", width = 10, height = 6, dpi = 600,plot=StRe)
+
+# Effect of swim speed on kinematics
+# 
+# 
+library(tidyverse)
+theme_set(
+  theme_bw() +
+    theme(legend.position = "top")
+  )
+megakine <- select(Megakine, c(lab, UsBL, TBF, headAmp, maxAmp, wavelength, maxcurv))
+megakine_gathered <- megakine %>%
+  as_data_frame() %>%
+  gather(key = "variable", value = "value",
+         -UsBL, -lab)
+
+megakine_gathered$lab <- mapvalues(megakine_gathered$lab, c("Conte", 'Greenfins',"Lauder", 'Liao'), c("USGS-Conte", 'Greenfins','Harvard', 'Whitney'))
+megakine_gathered$variable <- mapvalues(megakine_gathered$variable, c("lab", 'UsBL',"TBF", 'headAmp', "maxAmp","wavelength","maxcurv"), c("lab", 'Swim speed (BL/s)','Tailbeat frequency', 'Head amplitude', "Max amplitude", "Wavelength", "Max curvature"))
+megakine_gathered$variable <- as.factor(megakine_gathered$variable)
+target <- c("lab", 'Swim speed (BL/s)','Tailbeat frequency', 'Head amplitude', "Max amplitude", "Wavelength", "Max curvature")
+require(gdata)
+#installXLSXsupport(perl=perl)
+megakine_gathered$variable <- reorder.factor(megakine_gathered$variable, new.order=target)
+levels(megakine_gathered$variable) <- c("lab", 'Swim speed (BL/s)','Tailbeat frequency (Hz)', 'Head amplitude (BL)', "Max amplitude (BL)", "Wavelength (BL)", "Max curvature (BL)")
+
+#head(megakine.gathered, 3)
+
+  speed <- ggplot(megakine_gathered, aes(x = UsBL, y = value)) +
+  geom_point(aes(color = lab)) +
+  xlab("Swim speed (BL/s)\n ")+
+  ylab("")+
+  facet_wrap(variable~., ncol=1,scales = "free")+
+     theme(
+    strip.background = element_blank())+
+  scale_color_manual(values=c("dark cyan", "dark magenta","blue","dark goldenrod2"))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme (legend.text = element_text(size=15),legend.title = element_blank(),
+        axis.line = element_line(),
+        axis.title.x=element_text(size=20),
+        axis.title.y=element_text(size=20),
+        axis.text.x=element_text(size=15),
+        axis.text.y=element_text(size=15),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 15)
+  )
+speed
+ggsave(filename="Swimspeed.pdf", width = 10, height = 12, dpi = 600,plot=speed)
+
+# Same plot but color-coded by classical swimming categories.  
+# 
+library(tidyverse)
+theme_set(
+  theme_bw() +
+    theme(legend.position = "top")
+  )
+megakine <- select(Megakine, c(Swimmingmode, UsBL, TBF, headAmp, maxAmp, wavelength, maxcurv))
+megakine_gathered <- megakine %>%
+  as_data_frame() %>%
+  gather(key = "variable", value = "value",
+         -UsBL, -Swimmingmode)
+
+megakine_gathered$variable <- mapvalues(megakine_gathered$variable, c("TBF", 'headAmp', "maxAmp","wavelength","maxcurv"), c('Tailbeat frequency (Hz)', 'Head amplitude (BL)', "Max amplitude (BL)", "Wavelength (BL)", "Max curvature (BL)"))
+megakine_gathered$variable <- as.factor(megakine_gathered$variable)
+target <- c('Tailbeat frequency (Hz)', 'Head amplitude (BL)', "Max amplitude (BL)", "Wavelength (BL)", "Max curvature (BL)")
+require(gdata)
+#installXLSXsupport(perl=perl)
+megakine_gathered$variable <- reorder.factor(megakine_gathered$variable, new.order=target)
+levels(megakine_gathered$variable) <- c('Tailbeat frequency (Hz)', 'Head amplitude (BL)', "Max amplitude (BL)", "Wavelength (BL)", "Max curvature (BL)")
+
+megakine_gathered$Swimmingmode <- as.factor(megakine_gathered$Swimmingmode)
+target <- c("Anguilliform","Sub-carangiform", "Carangiform", "Thunniform")
+require(gdata)
+megakine_gathered$Swimmingmode <- reorder.factor(megakine_gathered$Swimmingmode, new.order=target)
+levels(megakine_gathered$Swimmingmode) <- c("Anguilliform","Sub-carangiform", "Carangiform", "Thunniform")
+
+
+  speed2 <- ggplot(megakine_gathered, aes(x = UsBL, y = value)) +
+  geom_point(aes(color = Swimmingmode)) +
+  xlab("\n Swim speed (BL/s) ")+
+    ylab("")+
+  facet_wrap(variable~., ncol=1,scales = "free")+
+     theme(
+    strip.background = element_blank())+
+  scale_color_manual(values=c("#A50026","#313695","#FDAE61", "#74ADD1"))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))+
+  theme(legend.text = element_text(size=15),legend.title = element_blank(),
+        axis.title.x=element_text(size=15),
+        axis.title.y=element_text(size=15),
+        axis.text.x=element_text(size=10),
+        axis.text.y=element_text(size=10),
+        plot.title=element_text(size=25),
+        plot.margin = unit(c(1,1,1,1), "cm"),
+        strip.background =element_rect(fill="white"), strip.text = element_text(size = 15)
+  )
+speed2
+ggsave(filename="Figure1_Swimspeed.pdf", width = 10, height = 12, dpi = 600,plot=speed2)
+ggsave(filename="Figure1_Swimspeed.jpg", width = 10, height = 12, dpi = 600,plot=speed2)  
+
+
+```
+
+
+# PCA analysis - 1
+
+```{r, echo=FALSE}
+library(devtools)
+install_github("vqv/ggbiplot", force=TRUE)
+library(ggbiplot)
+library(ggpubr)
+
+# some variables were not considered due to high correlations with others (UgBL,headamp, max_depth, etc.
+b <- select(MegakineMorpho, "species","maxcurv","UsBL","TBF","headtailamp","Re","St","wavelength","f","max_width","max_depth","depth90","width90","Swimmingmode")
+b <- na.omit(b)
+
+
+#setdiff(unique(Swimmingmode$species),unique(Swimmingmode2$species))
+
+Swimmingmode <- select(na.omit(b), 'species', 'Swimmingmode')
+Swimmingmode <- unique(Swimmingmode[c("species", "Swimmingmode")])
+Swimmingmode$Swimmingmode <- as.factor(Swimmingmode$Swimmingmode)
+Swimmingmode <- arrange(Swimmingmode, species)
+
+b <- select(b,1:13)
+
+c <- aggregate(. ~ species, na.omit(b), mean)
+c <- arrange(c,species)
+  
+#c <- merge(c,Swimmingmode, by='species')
+rownames(c)<-c$species
+
+c <- select(c,2:13)
+
+
+# PCA with standardization
+# (scale function susbtract the mean and divide by SD)
+megakine.pca1 <- prcomp(na.omit(c), center = TRUE,scale. = TRUE)
+summary (megakine.pca1)  
+
+plot(megakine.pca1, type="l")
+#windows()
+#plot(megakine.pca$x[,1:2], pch=16, col=MegakineMorpho$species)
+#plot(megakine.pca$x[,1:2], pch=16, col=Swimmingmode$Swimmingmode)
+
+# Plot the PCA results
+# 
+mode <- as.vector(Swimmingmode$Swimmingmode)
+ggbiplot(megakine.pca1,obs.scale = 3, var.scale = 3, labels=rownames(c),varname.size = 6, labels.size = 4, alpha=0.5)+theme_pubr()
+
+#windows()
+ggbiplot(megakine.pca1,obs.scale = 3, var.scale = 3,labels=rownames(c), varname.size = 6, labels.size = 4, alpha=0.5,ellipse=TRUE,groups=mode)+ggtitle("PCA-1")+theme_pubr()
+ggbiplot(megakine.pca1,obs.scale = 3, var.scale = 3,labels=rownames(c), varname.size = 6, labels.size = 4, alpha=0.5,ellipse=TRUE,choices = c(3,4),groups=mode)+theme_pubr()
+
+ggbiplot(megakine.pca1,obs.scale = 3, var.scale = 3,labels=(""), varname.size = 6, labels.size = 4, alpha=0.5,ellipse=TRUE,groups=mode)+ggtitle("")+ 
+scale_color_manual(name="Swimming mode", values=c("blue", "green", "red","orange")) +  
+geom_point(aes(colour=mode), size = 5) + expand_limits(y = c(-10, 7), x=c(-25,15))+
+theme(legend.direction ="horizontal", 
+      legend.position = "top")+theme_pubr(base_size = 20, base_family = "", border = FALSE,
+  margin = TRUE, legend = "top")
+
+
+```
+# PCA analysis - 2
+The same PCA analysis, with groundspeed (Ug) instead of swimspeed (Us). Swim speed is very lab-dependent. Ground speed is also lab-dependent, with fish tested at Conte having more space to swim and thus higher groundspeeds. However, some fish from the Lauder lab, as well as the tunas have positive groundspeeds and I wanted to check if this variable was affecting the way the species group.
+No stride length, which was correlated with tail amplitude and groundspeed.
+
+The results are very similar to the previous PCA. 
+```{r, echo=FALSE}
+b <- select(MegakineMorpho, "species","maxcurv","UgBL","TBF","St","maxAmp","headtailamp","wavelength","width90","max_depth","max_width", "depth90","width90","f","Swimmingmode")
+b <- na.omit(b)
+library(plyr)
+b <- arrange(b, species)
+
+
+Swimmingmode <- select(na.omit(b), 'species', 'Swimmingmode')
+Swimmingmode <- unique(Swimmingmode[c("species", "Swimmingmode")])
+Swimmingmode$Swimmingmode <- as.factor(Swimmingmode$Swimmingmode)
+Swimmingmode <- arrange(Swimmingmode, species)
+
+b <- select(b,1:13)
+
+d <- aggregate(. ~ species, na.omit(b), mean)
+
+#c <- merge(c,Swimmingmode, by='species')
+rownames(d)<-d$species
+
+d <- select(d,2:13)
+
+megakine.pca2 <- prcomp(na.omit(d), center = TRUE,scale. = TRUE)
+summary (megakine.pca2)  
+
+mode <- as.vector(Swimmingmode$Swimmingmode)
+
+#windows()
+ggbiplot(megakine.pca2,obs.scale = 3, var.scale = 3,labels=rownames(d), varname.size = 6, labels.size = 4, alpha=0.5,ellipse=TRUE,groups=mode)+ggtitle("PCA -2")+theme_pubr()
+
+```
+# PCA analysis - 3
+A much reduced PCA analysis.
+Variable related to speed and tailbeat frequency are left behind, to remove in part the 'lab effect'. Correlated variables, such as max amplitude, depth and width of the peduncle are also removed.
+The proportion of variance explained by the first 2 components is higher (0.67, or 0.68 if we replace the ratio of head to tail amplitude by head amplitude).
+Morphometrics still act as strong grouping variables.
+```{r, echo=FALSE}
+# a really reduced one, leaving behind the ground speed and TBF which are somewhat dependent of the lab (Conte fish have higher ground speeds and TBF)
+library(dplyr)
+b <- select(MegakineMorpho, "species","maxcurv","headtailamp","St","wavelength","f","max_width","max_depth","depth90","width90","Swimmingmode")
+b <- na.omit(b)
+colnames(b) <- c("species","Curvature","Head:tail amp","Strouhal", "Wavelength","Fineness ratio", "Body width","Body depth", "Peduncle depth", "Peduncle width", "Swimmingmode")
+
+#library(plyr)
+b <- arrange(b, species)
+
+Swimmingmode <- select(na.omit(b), 'species', 'Swimmingmode')
+Swimmingmode <- unique(Swimmingmode[c("species", "Swimmingmode")])
+Swimmingmode$Swimmingmode <- as.factor(Swimmingmode$Swimmingmode)
+Swimmingmode <- arrange(Swimmingmode, species)
+
+b <- select(b,1:10)
+
+c <- aggregate(. ~ species, na.omit(b), mean)
+c <- arrange(c,species)
+  
+#c <- merge(c,Swimmingmode, by='species')
+rownames(c)<-c$species
+
+c <- select(c,2:10)
+
+
+# PCA with standardization
+# (scale function susbtract the mean and divide by SD)
+megakine.pca3 <- prcomp(na.omit(c), center = TRUE,scale. = TRUE)
+summary (megakine.pca3)  
+
+plot(megakine.pca3, type="l")
+#windows()
+#plot(megakine.pca$x[,1:2], pch=16, col=MegakineMorpho$species)
+#plot(megakine.pca$x[,1:2], pch=16, col=Swimmingmode$Swimmingmode)
+
+# Plot the PCA results
+# 
+mode <- as.vector(Swimmingmode$Swimmingmode)
+mode <- mapvalues(mode, c("a", 'sc',"c", 't'), c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform'))
+mode <- as.factor(mode)
+target <- c("Anguilliform", 'Sub-carangiform','Carangiform', 'Thunniform')
+require(gdata)
+mode <- reorder.factor(mode, new.order=target)
+
+ggbiplot(megakine.pca3,obs.scale = 3, var.scale = 3, labels=rownames(c),varname.size = 6, labels.size = 4, alpha=0.5)+theme_pubr()
+
+
+library(factoextra)
+# Eigenvalues
+eig.val <- get_eigenvalue(megakine.pca3)
+eig.val
+  
+# Results for Variables
+pca3.var <- get_pca_var(megakine.pca3)
+pca3.var$coord          # Coordinates
+pca3.var$contrib        # Contributions to the PCs
+
+# scree plot
+library(factoextra)
+library(corrplot)
+fviz_eig(megakine.pca3, addlabels = TRUE)
+
+# contribution of variable to the PCs
+fviz_pca_var (megakine.pca3, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE # Évite le chevauchement de texte
+             )
+
+res <- get_pca_var(megakine.pca3)
+corrplot(res$cos2)
+corrplot(res$contrib, is.corr=FALSE)
+
+# Contributions of variables to PC1
+pc1 <- fviz_contrib(megakine.pca3, choice = "var", axes = 1, top = 10)+ ggtitle("Morphology dimension")+xlab("")+ theme_classic()+ theme(axis.title.x=element_text(size=5),axis.text.x=element_text(angle =45, vjust = 0.5))
+# Contributions of variables to PC2
+pc2 <- fviz_contrib(megakine.pca3, choice = "var", axes = 2, top = 10)+ggtitle("Kinematics dimension")+xlab("")+ylab("")+ theme_classic()+ theme(axis.title.x=element_text(size=5),axis.text.x=element_text(angle =45, vjust = 0.5))
+
+
+
+library(RColorBrewer)
+
+# View a single RColorBrewer palette by specifying its name
+display.brewer.pal(n = 11, name = 'RdYlBu')
+
+# Hexadecimal color specification 
+brewer.pal(n = 11, name = 'RdYlBu')
+
+#windows()
+ggbiplot(megakine.pca3,obs.scale = 3, var.scale = 3,labels=rownames(c), varname.size = 6, labels.size = 4, alpha=0.5,ellipse=TRUE,groups=mode)+ggtitle("PCA-3")+theme_pubr()
+ggbiplot(megakine.pca3,obs.scale = 3, var.scale = 3,labels=rownames(c), varname.size = 6, labels.size = 4, alpha=0.5,ellipse=TRUE,choices = c(3,4),groups=mode)+theme_pubr()
+
+# Final plot
+
+pca3 <- ggbiplot(megakine.pca3,obs.scale = 3, var.scale = 3,labels=(""), varname.size = 3, var.axes = TRUE,varname.adjust=2, labels.size = 3, alpha=0.7,ellipse=TRUE,groups=mode)+ggtitle("A - PCA \n")+ xlab("\n Morphology (41 % explained)")+ ylab("Kinematics (20.8 % explained) ")+
+scale_color_manual(name="Swimming mode",values=c("#A50026","#313695","#FDAE61", "#74ADD1")) + 
+#scale_color_manual(name="Swimming mode", values=c("#D95F02","#1B9E77", "#7570B3" , "#E7298A"))  +
+geom_point(aes(colour=mode), size = 3) + expand_limits(y = c(-10, 10), x=c(-20,20))+
+theme_pubr(base_size = 13, base_family = "", border = FALSE,margin = TRUE, legend = "bottom")+
+theme(plot.title =element_text(face="bold", size=14),plot.margin = unit(c(1,1,1,1), "cm"))
+print(pca3)
+
+
+ggsave(filename="Figure4_PCA.pdf", width = 12, height = 6, dpi = 600,plot=pca3)
+
+```
+# PCA without amphioxus
+Amphioxus have very high head amplitude, and they could act as outliers in our species distribution.
+However, the same reduced PCA without them gives very similar results.
+
+
+```{r, eval=FALSE,echo=FALSE}
+
+b <- select(MegakineMorpho, "species","maxcurv","SL","headAmp","wavelength","max_depth","max_width","f","Swimmingmode")
+b <- na.omit(b)
+b <- subset(b,species!="Branchiostoma_lanceolatum")
+library(plyr)
+b <- arrange(b, species)
+#str(b)
+
+Swimmingmode <- select(na.omit(b), 'species','Swimmingmode')
+Swimmingmode <- unique(Swimmingmode[c("species","Swimmingmode")])
+Swimmingmode$Swimmingmode <- as.factor(Swimmingmode$Swimmingmode)
+Swimmingmode <- arrange(Swimmingmode, species)
+
+
+b <- select(b,1:8)
+
+d <- aggregate(. ~ species, na.omit(b), mean)
+
+#c <- merge(c,Swimmingmode, by='species')
+rownames(d)<-d$species
+
+d <- select(d,2:8)
+
+megakine.pca <- prcomp(na.omit(d), center = TRUE,scale. = TRUE)
+summary (megakine.pca)  
+
+mode <- as.vector(Swimmingmode$Swimmingmode)
+
+#windows()
+ggbiplot(megakine.pca,obs.scale = 3, var.scale = 3,labels=rownames(d), varname.size = 6, labels.size = 4, alpha=0.5,ellipse=TRUE,groups=mode)+ggtitle("PCA -3- without amphioxus")+theme_pubr()
+
+
+```
+
+# Discriminant function analysis
+
+
+```{r, eval=FALSE, echo=FALSE}
+####DFA
+library(MASS)
+library(dplyr)
+a <- select(MegakineMorpho, "maxcurv","maxcurvloc","SL","headAmp","tailAmp","minAmp","maxAmp","minAmploc","maxAmploc","headtailamp","Re","St","wavelength","f","max_width","max_depth","depth90","width90","max_depth_location", "max_width_location","Swimmingmode")
+a <- na.omit(a)
+
+md.lda0 <- lda(Swimmingmode ~
+                 maxcurv+maxcurvloc + headAmp + tailAmp + minAmploc + minAmp +
+                 maxAmploc + maxAmp+ f+ St + wavelength + depth90 + max_depth + max_depth_location +
+                 width90+max_width + max_width_location,
+               data=a, CV=T)
+md.lda0
+
+percentcorrect <- table(a$Swimmingmode, md.lda0$class)
+
+diag(prop.table(percentcorrect,1))
+
+sum(diag(prop.table(percentcorrect)))
+plot(md.lda0)
+
+#####with scaled centered
+colnames(md.prunedomit)
+a.scaled<-scale(a[,1:20], center = TRUE, scale = TRUE)
+
+a.scaled<-data.frame(a.scaled)
+a.scaled$Swimmingmode <- a$Swimmingmode
+#md.prunedomitscaled$species <- md.prunedomit$species
+
+md.lda3 <- lda(Swimmingmode ~
+                 maxcurvloc + headAmp + tailAmp + minAmploc + minAmp +
+                 maxAmploc + St + wavelength + depth90 + max_depth + max_depth_location +
+                 max_width + max_width_location,
+               data=a.scaled)
+md.lda3
+plot(md.lda3)
+mode <- a.scaled$Swimmingmode
+
+md.lda3values<-predict(md.lda3)
+plot(md.lda3values$x[,1], md.lda3values$x[,2],
+     pch=16, col=md.lda3values$class,
+     xlab="Discriminant function 1 (77% of between group variation)",
+     ylab="DF 2 (20% variation)")
+
+legend(x="topright", pch=16, col=unique(md.prunedomitscaled$Swimmingmode),
+       legend= unique(md.prunedomitscaled$Swimmingmode))
+
+####without morphology
+md.lda4 <- lda(Swimmingmode ~
+                 maxcurvloc + headAmp + tailAmp + minAmploc + minAmp +
+                 maxAmploc + St + wavelength + tbfspeedResid,
+               data=md.prunedomitscaled)
+md.lda4
+plot(md.lda4)
+
+md.lda4values<-predict(md.lda4)
+plot(md.lda4values$x[,1], md.lda4values$x[,2],
+     pch=16, col=md.prunedomitscaled$Swimmingmode,
+     xlab="Discriminant function 1 (67% of between group variation)",
+     ylab="DF 2 (25% variation)")
+
+legend(x="topright", pch=16, col=unique(md.prunedomitscaled$Swimmingmode),
+       legend= unique(md.prunedomitscaled$Swimmingmode))
+
+#####
+plot(md$UsBL, md$tailAmp) 
+```
+
+
+# Density-based cluster analysis
+Used the package DBscan, which uses the DBscan algorithm, based on density (cluster are contiguous dense regions in the data space), separated by areas of low density of points. Do not assume parametric distributions, or specific shape for the clusters (ex: hyper-elliptical), good at handling 'noise'.
+```{r, fig.width=15, fig.height=12, echo=FALSE}
+library(dbscan)
+library(dplyr)
+library(RColorBrewer)
+# create a temporary dataset, average kinematics and morphometrics by species.
+a <- select(MegakineMorpho, "species","maxcurv","maxcurvloc","SL","headAmp","tailAmp","minAmp","maxAmp","minAmploc","maxAmploc","headtailamp","Re","St","wavelength","f","max_width","max_depth","depth90","width90","depth50", "width50","max_depth_location", "max_width_location")
+a <- na.omit(a)
+c <- aggregate(. ~ species, na.omit(a), mean)
+c <- arrange(c,species)
+species <- select(c,"species")
+c$species <- NULL
+
+# 2 dimensions to check if the resulting clusters fit with what I observe in my descriptive statistics
+# It does...
+c0 <- select(c, "headAmp", "headtailamp")
+kNNdistplot(c0, k = 3)
+res <- dbscan(c0, eps = 0.04, minPts = 3, borderPoints=TRUE)
+res
+plot(c0, col = res$cluster + 1L, pch = res$cluster + 1L,cex=2,cex.axis=2, cex.lab=2)
+hullplot(c0,res)
+
+# Run makePairs function
+makePairs <- function(data) 
+{
+  grid <- expand.grid(x = 1:ncol(data), y = 1:ncol(data))
+  grid <- subset(grid, x != y)
+  all <- do.call("rbind", lapply(1:nrow(grid), function(i) {
+    xcol <- grid[i, "x"]
+    ycol <- grid[i, "y"]
+    data.frame(xvar = names(data)[ycol], yvar = names(data)[xcol], 
+               x = data[, xcol], y = data[, ycol], data)
+  }))
+  all$xvar <- factor(all$xvar, levels = names(data))
+  all$yvar <- factor(all$yvar, levels = names(data))
+  densities <- do.call("rbind", lapply(1:ncol(data), function(i) {
+    data.frame(xvar = names(data)[i], yvar = names(data)[i], x = data[, i])
+  }))
+  list(all=all, densities=densities)
+}
+# Multi-dimensions - morphometrics
+# the noise point is the Atlantic spadefish  & bluegill (deep body), adult sea lamprey (located between two clusters).
+c2 <- select(c,"f","max_depth", "max_width", "depth90", "width90")
+kNNdistplot(c2, k = 6)
+res <- dbscan(c2, eps = 0.12, minPts = 6, borderPoints=TRUE)
+res
+plot(c2, col = res$cluster + 1L, pch = res$cluster + 1L, cex=2, cex.lab=2, cex.axis=2)
+#hullplot(c2,res)
+
+# expand morphometrics data frame for pairs plot
+c2$cluster <- res$cluster
+c2$cluster <- as.factor(c2$cluster)
+c2$species <- NULL
+colnames(c2) <- c("Fineness ratio", "Body depth", "Body width", "Peduncle depth", "Peduncle width", "Cluster")
+#library(crimelinkage)
+gg2 = makePairs(c2[,-6])
+ 
+# new data frame 
+mega_c2 = data.frame(gg2$all, Cluster=rep(c2$Cluster, length=nrow(gg2$all)))
+
+# View a single RColorBrewer palette by specifying its name
+display.brewer.pal(n = 11, name = 'RdYlBu')
+
+# Hexadecimal color specification 
+brewer.pal(n = 11, name = 'RdYlBu')
+
+e <- ggplot(mega_c2, aes_string(x = "x", y = "y")) + 
+  facet_grid(xvar ~ yvar, scales = "free") + 
+  geom_point(aes(colour=Cluster), na.rm = TRUE, alpha=1)+ 
+  scale_y_continuous(breaks = scales::pretty_breaks(3), limits = c(NA, NA))+
+  scale_x_continuous(breaks = scales::pretty_breaks(3), limits = c(NA, NA))+
+  scale_color_manual(values=c("red" , "#313695", "#FDAE61"))+
+#scale_color_brewer(palette='Dark2')+
+  #scale_fill_brewer(palette='Dark2') +
+  theme(legend.position = "top", legend.text = element_text(size=11),legend.title = element_text(size=11),plot.title =element_text(face="bold", size=14), axis.title=element_blank(),text = element_text(size=8), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), strip.background =element_rect(fill="white"),strip.text = element_text(size=6),panel.spacing = unit(0.1, "cm"))+ggtitle("B - Morphometrics")
+e+guides(colour = guide_legend(override.aes = list(size=1)))
+
+ggsave(filename="Figure3A-Morphometrics.pdf", width = 16, height = 15, dpi = 600,plot=e)
+
+# Multi-dimensions - Kinematics
+# noise points are largemouth bass & rainbow trout (large curvature)
+c1 <- select(c, "headAmp","tailAmp", "wavelength", "maxcurv", "St")
+kNNdistplot(c1, k = 6)
+res <- dbscan(c1, eps = 4.5, minPts = 6, borderPoints=TRUE)
+res
+plot(c1, col = res$cluster + 1L, pch = res$cluster + 1L, cex=2, cex.lab=2, cex.axis=2)
+#hullplot(c1,res)
+
+c1$cluster <- res$cluster
+
+#c1 <- dplyr::filter(data, cluster > 0)
+c1$cluster <- as.factor(c1$cluster)
+c1$species <- NULL
+colnames(c1) <- c("Head amplitude", "Tail amplitude", "Wavelength", "Curvature", "Strouhal", "Cluster")
+
+# expand kinematics data frame for pairs plot
+gg1 = makePairs(c1[,-6])
+ 
+# new data frame 
+mega_c1 = data.frame(gg1$all, Cluster=rep(c1$Cluster, length=nrow(gg1$all)))
+ 
+f <- ggplot(mega_c1, aes_string(x = "x", y = "y")) + 
+  facet_grid(xvar ~ yvar, scales = "free") + 
+  geom_point(aes(colour=Cluster), na.rm = TRUE, alpha=1)+
+  scale_y_continuous(breaks = scales::pretty_breaks(3), limits = c(NA, NA))+
+  scale_x_continuous(breaks = scales::pretty_breaks(3), limits = c(NA, NA))+
+  scale_color_manual(values=c("red", "#313695", "#FDAE61"))+
+  #scale_color_brewer(palette='Dark2')+
+  #scale_fill_brewer(palette='Dark2') +
+  theme(legend.position = "top", legend.text = element_text(size=11),legend.title = element_text(size=11),plot.title =element_text(face="bold", size=14), axis.title=element_blank(),text = element_text(size=8), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), strip.background =element_rect(fill="white"),strip.text = element_text(size=6),panel.spacing = unit(0.1, "cm"))+ggtitle("C - Kinematics ")
+f+guides(colour = guide_legend(override.aes = list(size=1)))
+
+ggsave(filename="Figure3B_Kinematics.pdf",  width = 16, height = 15, plot=f)
+
+
+# All together: only one cluster?
+# c3 <- select(c,"f","max_depth", "max_width", "depth90", "width90","headAmp","tailAmp", "wavelength", "maxcurv", "St")
+# kNNdistplot(c3, k = 11)
+# res <- dbscan(c3, eps = 3.5, minPts = 6)
+# res
+# plot(c3, col = res$cluster + 1L, pch = res$cluster + 1L, cex=2, cex.lab=2, cex.axis=2, scale_color_brewer(palette='Dark2')+
+#   scale_fill_brewer(palette='Dark2')+
+#     theme(legend.position = "bottom", plot.title = element_blank(), axis.title=element_blank(),text = element_text(size=18))
+
+
+```
+# Render all multivariate graphs together
+
+```{r, echo=FALSE}
+windows()
+
+
+library(gtable)
+library(gridExtra)
+
+multiplot_multivariate<- grid.arrange(arrangeGrob(pca3,ncol=1, nrow=1),
+        arrangeGrob(pc1,pc2, ncol=2, nrow=1),
+         arrangeGrob(e,f, ncol=2, nrow=1), heights=c(13,5,12))
+
+ggsave(plot= multiplot_multivariate, width = 20, height = 30, dpi = 600, filename = "Multiplot_multivariate.pdf", limitsize=FALSE)
+
+         
+
+
+```
+
+
+#Cladogram based on head:tail amplitude
+
+```{r , echo=FALSE}
+library(phytools)
+
+# read in dataset that has headtail amplitude in it
+mk <- MegakineMorpho
+head(mk)
+
+#average dataset by species
+mks<-aggregate(mk,list(mk$species),mean)
+
+#make species names the same structure as in tree
+spps<-gsub("_", " ", mks$Group.1, fixed=TRUE)
+mks$species2<-spps
+
+###make vector that has names that match tip names in tree and variable of interest (headtailamp)
+y<-mks$headtailamp
+names(y)<-mks$species2
+
+###Read in tree from file
+mkphylogram<-read.newick("F:/Mega kinematic all videos/Analysis/Megakinetree.newick")
+
+###change tips labels to look good and match data spreadsheet
+tiplabelsBAD<-mkphylogram$tip.label
+tiplabelsGood <- gsub("_", " ", tiplabelsBAD)
+mkphylogram$tip.label <- tiplabelsGood
+
+##make sure there are no differences in species names between tree and data
+setdiff(mkphylogram$tip.label,spps)
+
+
+###reconstruct ancestral state of headtail amp on phylogeny and make it an object
+objMKheadtail <- contMap(mkphylogram,y, fsize=1, plot=F)
+
+###mess with color pallete and plot
+n <- length(objMKheadtail$cols)
+objMKheadtail$cols[1:n] <- colorRampPalette( c("darkslategray","darkslategray1","gold","darkorange","orchid1"), space="Lab") (n)
+plot(objMKheadtail, fsize=c(0.6,1))
+
+
+```
+
