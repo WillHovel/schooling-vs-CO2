@@ -185,11 +185,11 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
     fin.stride_length_BL  = stride_length_BL;   % NEW
 
     fin.mean_yaw    = mean(yaw_v);     fin.std_yaw    = std(yaw_v);
-    fin.range_yaw   = range(yaw_v);
+    fin.range_yaw   = max(yaw_v) - min(yaw_v);
     fin.mean_pitch  = mean(pitch_v);   fin.std_pitch  = std(pitch_v);
-    fin.range_pitch = range(pitch_v);
+    fin.range_pitch = max(pitch_v) - min(pitch_v);
     fin.mean_roll   = mean(roll_v);    fin.std_roll   = std(roll_v);
-    fin.range_roll  = range(roll_v);
+    fin.range_roll  = max(roll_v) - min(roll_v);
 
     fin.mean_speed   = mean(spd_v,     'omitnan');
     fin.std_speed    = std(spd_v,      'omitnan');

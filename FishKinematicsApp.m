@@ -45,6 +45,7 @@ function FishKinematicsApp()
     app.fp        = [];
     app.kine      = [];
     app.ext       = [];   % extended body kinematics (body angle, speed, stride, head elevation, roll)
+    app.school_fp = [];   % multi-fish struct array for School Metrics tab (RAW, untransformed)
     app.fmt       = '';
     app.avail_pts = {};
     app.sel_order = {};
@@ -127,6 +128,18 @@ function FishKinematicsApp()
     uilabel(LP, 'Text', 'Min frequency (Hz)', 'Position', [12 y-24 190 20], 'FontSize', 12);
     app.minFreqField = uieditfield(LP, 'numeric', 'Position', [250 y-24 78 26], ...
         'Value', 0.5, 'Limits', [0 1000]);
+    y = y - 30;
+
+    app.chkJumpFilter = uicheckbox(LP, 'Position', [12 y-22 210 22], 'FontSize', 11, ...
+        'Text', 'Filter DLC tracking jumps', 'Value', false, ...
+        'Tooltip', ['Replaces a point with NaN in any frame where it deviates from its ' ...
+                    'own local-median trajectory by more than the threshold fraction of ' ...
+                    'body length — catches a point that briefly teleports to the wrong ' ...
+                    'feature. Applied right after loading, before axis alignment.']);
+    app.jumpThreshField = uieditfield(LP, 'numeric', 'Position', [230 y-22 50 22], ...
+        'Value', 0.5, 'Limits', [0.05 5], 'Tooltip', 'Threshold, as a fraction of body length');
+    uilabel(LP, 'Position', [284 y-22 44 22], 'FontSize', 10, 'FontColor', [0.5 0.5 0.5], ...
+        'Text', 'x BL');
     y = y - 42;
 
     % ---- Axis Mapping (shown only for 3D formats) ----
@@ -469,24 +482,32 @@ function FishKinematicsApp()
                     'tracking (e.g. some missing snout Z) — keeps every file in the batch ' ...
                     'directly comparable instead of some being 2D and some 3D.']);
 
-    uilabel(batchLeftPanel, 'Position', [12 494 356 20], 'FontSize', 10, ...
+    app.batchJumpFilter = uicheckbox(batchLeftPanel, 'Position', [12 500 210 22], 'FontSize', 10, ...
+        'Text', 'Filter DLC tracking jumps', 'Value', false, ...
+        'Tooltip', 'Same as the Kinematics tab checkbox — applied to every file in the batch.');
+    app.batchJumpThreshField = uieditfield(batchLeftPanel, 'numeric', 'Position', [228 500 50 22], ...
+        'Value', 0.5, 'Limits', [0.05 5]);
+    uilabel(batchLeftPanel, 'Position', [282 500 44 22], 'FontSize', 10, 'FontColor', [0.5 0.5 0.5], ...
+        'Text', 'x BL');
+
+    uilabel(batchLeftPanel, 'Position', [12 464 356 20], 'FontSize', 10, ...
         'FontWeight', 'bold', 'Text', 'Also run (uses Root/Tip from Fin Analysis tab):');
-    app.batchRunFin = uicheckbox(batchLeftPanel, 'Position', [12 468 340 22], ...
+    app.batchRunFin = uicheckbox(batchLeftPanel, 'Position', [12 438 340 22], ...
         'FontSize', 10, 'Text', 'Fin analysis', 'Value', false);
-    app.batchRunGirdle = uicheckbox(batchLeftPanel, 'Position', [12 444 340 22], ...
+    app.batchRunGirdle = uicheckbox(batchLeftPanel, 'Position', [12 414 340 22], ...
         'FontSize', 10, 'Text', 'Girdle analysis (uses Root point)', 'Value', false);
-    app.batchRunDuty = uicheckbox(batchLeftPanel, 'Position', [12 420 340 22], ...
+    app.batchRunDuty = uicheckbox(batchLeftPanel, 'Position', [12 390 340 22], ...
         'FontSize', 10, 'Text', 'Duty factor estimate (requires Fin analysis above)', 'Value', false);
 
-    uilabel(batchLeftPanel, 'Position', [12 388 356 34], 'FontSize', 9, 'WordWrap', 'on', ...
+    uilabel(batchLeftPanel, 'Position', [12 358 356 34], 'FontSize', 9, 'WordWrap', 'on', ...
         'FontColor', [0.5 0.5 0.5], 'Text', ...
         'FPS and Min Frequency are taken from the Kinematics tab — set those first.');
 
-    app.batchRunButton = uibutton(batchLeftPanel, 'Text', 'Run Batch', 'Position', [12 348 160 34], ...
+    app.batchRunButton = uibutton(batchLeftPanel, 'Text', 'Run Batch', 'Position', [12 318 160 34], ...
         'FontSize', 12, 'BackgroundColor', [0.2 0.55 0.3], 'FontColor', [1 1 1], ...
         'ButtonPushedFcn', @(~,~) onRunBatch());
 
-    app.batchProgressLabel = uilabel(batchLeftPanel, 'Position', [12 318 356 24], ...
+    app.batchProgressLabel = uilabel(batchLeftPanel, 'Position', [12 288 356 24], ...
         'FontSize', 10, 'FontColor', [0.4 0.4 0.4], 'Text', '');
 
     % ---- Right column: scrolling log, one line per file ----
@@ -496,6 +517,81 @@ function FishKinematicsApp()
         'Editable', 'off', 'FontSize', 10, 'FontName', 'Courier New', 'Value', {'(no batch run yet)'});
     batchRightPanel.SizeChangedFcn = @(src,~) set(app.batchLogArea, ...
         'Position', [0 0 max(1,src.Position(3)) max(1,src.Position(4))]);
+
+    %% ================================================================
+    %  SCHOOL METRICS TAB (multi-fish: polarization, angle-to-flow,
+    %  distance between individuals)
+    %% ================================================================
+    tabSchool = uitab(tg, 'Title', 'School Metrics');
+
+    schoolInfoPanel = uipanel(tabSchool, 'Units', 'normalized', ...
+        'Position', [0 0.93 1 0.06], 'BorderType', 'none', ...
+        'BackgroundColor', [0.95 0.95 0.95], 'AutoResizeChildren', 'off');
+    uilabel(schoolInfoPanel, 'Position', [8 2 1200 32], 'FontSize', 12, ...
+        'FontColor', [0.4 0.4 0.6], 'WordWrap', 'on', 'Text', ...
+        ['Group-level metrics across ALL fish in one multi-animal file (Fish1_P1_x, Fish2_P1_x, ... ' ...
+         'columns). These use RAW (untransformed) coordinates on purpose — school-level angle and ' ...
+         'distance only make sense in one shared coordinate frame, not each fish''s own private one.']);
+
+    schoolLeftPanel = uipanel(tabSchool, 'Units', 'normalized', 'Position', [0 0 0.32 0.93], ...
+        'BorderType', 'line', 'AutoResizeChildren', 'off', 'Scrollable', 'on');
+
+    uilabel(schoolLeftPanel, 'Position', [12 850 356 20], 'FontSize', 10, 'FontWeight', 'bold', ...
+        'Text', 'Multi-fish CSV file:');
+    app.schoolFileField = uieditfield(schoolLeftPanel, 'text', 'Position', [12 824 260 26], ...
+        'Value', '', 'Editable', 'off');
+    uibutton(schoolLeftPanel, 'Text', 'Browse...', 'Position', [278 824 90 26], ...
+        'ButtonPushedFcn', @(~,~) onSchoolBrowse());
+
+    app.schoolLoadedLabel = uilabel(schoolLeftPanel, 'Position', [12 794 356 24], ...
+        'FontSize', 10, 'FontColor', [0.5 0.5 0.5], 'Text', 'No file loaded.');
+
+    uilabel(schoolLeftPanel, 'Position', [12 764 356 20], 'FontSize', 10, 'FontWeight', 'bold', ...
+        'Text', 'Snout point:');
+    app.schoolSnoutDrop = uidropdown(schoolLeftPanel, 'Position', [130 764 238 24], ...
+        'Items', {'(load file first)'});
+    uilabel(schoolLeftPanel, 'Position', [12 734 356 20], 'FontSize', 10, 'FontWeight', 'bold', ...
+        'Text', 'Peduncle point:');
+    app.schoolPeduncleDrop = uidropdown(schoolLeftPanel, 'Position', [130 734 238 24], ...
+        'Items', {'(load file first)'});
+
+    uilabel(schoolLeftPanel, 'Position', [12 700 200 20], 'FontSize', 10, ...
+        'Text', 'Flow axis (deg, 0 = +X):');
+    app.schoolFlowAxisField = uieditfield(schoolLeftPanel, 'numeric', 'Position', [230 700 78 24], ...
+        'Value', 0, 'Limits', [-360 360], ...
+        'Tooltip', 'Heading angle that counts as "aligned with flow" in your raw/camera coordinates.');
+
+    uilabel(schoolLeftPanel, 'Position', [12 668 200 20], 'FontSize', 10, ...
+        'Text', 'cm per raw unit:');
+    app.schoolCmPerUnitField = uieditfield(schoolLeftPanel, 'numeric', 'Position', [230 668 78 24], ...
+        'Value', 1.0, 'Limits', [1e-6 1e6], ...
+        'Tooltip', ['Conversion factor from your CSV''s raw coordinate units to cm, for the ' ...
+                    'distance-between-individuals metric. Leave at 1.0 if your data is already ' ...
+                    'calibrated to cm; otherwise this needs your pixel-to-cm (or similar) factor.']);
+
+    app.schoolJumpFilter = uicheckbox(schoolLeftPanel, 'Position', [12 636 210 22], 'FontSize', 10, ...
+        'Text', 'Filter DLC tracking jumps', 'Value', false);
+    app.schoolJumpThreshField = uieditfield(schoolLeftPanel, 'numeric', 'Position', [228 636 50 22], ...
+        'Value', 0.5, 'Limits', [0.05 5]);
+    uilabel(schoolLeftPanel, 'Position', [282 636 44 22], 'FontSize', 10, 'FontColor', [0.5 0.5 0.5], ...
+        'Text', 'x BL');
+
+    app.schoolRunButton = uibutton(schoolLeftPanel, 'Text', 'Compute School Metrics', ...
+        'Position', [12 596 260 34], 'FontSize', 12, 'BackgroundColor', [0.2 0.55 0.3], ...
+        'FontColor', [1 1 1], 'ButtonPushedFcn', @(~,~) onComputeSchoolMetrics());
+
+    app.schoolResultsArea = uitextarea(schoolLeftPanel, 'Position', [12 380 356 200], ...
+        'Editable', 'off', 'FontSize', 10, 'FontName', 'Courier New', ...
+        'Value', {'(run School Metrics to see results)'});
+
+    schoolRightPanel = uipanel(tabSchool, 'Units', 'normalized', 'Position', [0.33 0 0.67 0.93], ...
+        'BorderType', 'line', 'AutoResizeChildren', 'off');
+    app.schoolPolAx = uiaxes(schoolRightPanel, 'Units', 'normalized', 'Position', [0.05 0.55 0.9 0.4]);
+    title(app.schoolPolAx, 'Polarization over time');
+    xlabel(app.schoolPolAx, 'Frame'); ylabel(app.schoolPolAx, 'Polarization (0-1)');
+    app.schoolDistAx = uiaxes(schoolRightPanel, 'Units', 'normalized', 'Position', [0.05 0.05 0.9 0.4]);
+    title(app.schoolDistAx, 'Mean nearest-neighbor distance over time');
+    xlabel(app.schoolDistAx, 'Frame'); ylabel(app.schoolDistAx, 'Distance');
 
     %% ================================================================
     %  CALLBACKS
@@ -768,6 +864,28 @@ function FishKinematicsApp()
         fps     = app.fpsField.Value;
         minFreq = app.minFreqField.Value;
 
+        % ---- Guard: DLC multi-animal export (4-row header) doesn't match
+        % ANY format this tab's loaders understand, and attempting to parse
+        % it here can hang (readtable trying to make sense of the "scorer"
+        % row's ~90 duplicate strings as if they were real column headers)
+        % rather than failing with a catchable error. Catch it early and
+        % redirect instead. ----
+        try
+            probe = readcell(csvPath, 'Range', 'A2:A2');
+            if ~isempty(probe) && (ischar(probe{1}) || isstring(probe{1})) ...
+                    && strcmpi(strtrim(string(probe{1})), 'individuals')
+                uialert(fig, ['This looks like a DeepLabCut multi-animal export (4-row header: ' ...
+                               'scorer/individuals/bodyparts/coords) — use the "School Metrics" tab ' ...
+                               'instead, which has a loader built for this format.'], ...
+                               'Wrong tab for this file');
+                setStatus('Use School Metrics tab for this file.');
+                return
+            end
+        catch
+            % probe itself failing isn't fatal — just proceed to the normal
+            % loaders below and let their own error handling take over.
+        end
+
         setStatus('Loading...');
         try
             switch app.fmt
@@ -808,6 +926,17 @@ function FishKinematicsApp()
                     uialert(fig, 'Unknown format — browse a file first.', 'Format'); return
             end
         catch ME; logFullError(ME); uialert(fig, ME.message, 'Load error'); setStatus('Load failed.'); return; end
+
+        if app.chkJumpFilter.Value && ~strcmp(app.fmt, 'curves')
+            setStatus('Filtering DLC tracking jumps...');
+            try
+                app.fp = filter_dlc_jumps(app.fp, app.jumpThreshField.Value);
+            catch ME
+                logFullError(ME);
+                uialert(fig, ME.message, 'Jump filter error');
+                setStatus('Jump filter failed.'); return
+            end
+        end
 
         setStatus('Remapping axes...');
         try
@@ -1337,6 +1466,131 @@ function FishKinematicsApp()
         app.finResultsArea.Value = R;
     end
 
+    % ---- School Metrics: load a multi-fish CSV ----
+    function onSchoolBrowse()
+        [fname, fpath] = uigetfile({'*.csv','CSV files (*.csv)'}, 'Select multi-fish CSV');
+        if isequal(fname, 0), return; end
+        fullPath = fullfile(fpath, fname);
+        app.schoolFileField.Value = fullPath;
+
+        setStatus('Loading multi-fish file...');
+        try
+            % Auto-detect format: a native DLC multi-animal export has the
+            % literal word "individuals" as the first cell of row 2 — a
+            % totally different 4-row header structure than the older
+            % Fish1_P1_x flattened convention load_fish_points() expects.
+            probe = readcell(fullPath, 'Range', 'A2:A2');
+            if ~isempty(probe) && (ischar(probe{1}) || isstring(probe{1})) ...
+                    && strcmpi(strtrim(string(probe{1})), 'individuals')
+                fp = load_fish_points_dlc_multianimal(fullPath);
+            else
+                fp = load_fish_points(fullPath);
+            end
+        catch ME
+            logFullError(ME);
+            uialert(fig, ME.message, 'Load error');
+            setStatus('Load failed.'); return
+        end
+
+        if numel(fp) < 2
+            app.schoolLoadedLabel.Text = sprintf(['Loaded, but only %d fish found — School Metrics ' ...
+                'needs multiple fish (Fish1_P1_x, Fish2_P1_x, ... columns).'], numel(fp));
+            app.schoolLoadedLabel.FontColor = [0.8 0.3 0.1];
+        else
+            app.schoolLoadedLabel.Text = sprintf('Loaded: %d fish, %d frames, %d points each.', ...
+                numel(fp), size(fp(1).points,1), numel(fp(1).point_names));
+            app.schoolLoadedLabel.FontColor = [0.3 0.6 0.3];
+        end
+
+        app.school_fp = fp;
+        app.schoolSnoutDrop.Items = fp(1).point_names;
+        app.schoolPeduncleDrop.Items = fp(1).point_names;
+        if numel(fp(1).point_names) >= 2
+            app.schoolSnoutDrop.Value = fp(1).point_names{1};
+            app.schoolPeduncleDrop.Value = fp(1).point_names{end};
+        end
+        setStatus(sprintf('Loaded %d fish for School Metrics.', numel(fp)));
+    end
+
+    % ---- School Metrics: compute polarization, angle-to-flow, distance ----
+    function onComputeSchoolMetrics()
+        if isempty(app.school_fp) || numel(app.school_fp) < 2
+            uialert(fig, 'Load a multi-fish file with at least 2 fish first.', 'No data'); return
+        end
+
+        fp = app.school_fp;
+        snoutName    = app.schoolSnoutDrop.Value;
+        peduncleName = app.schoolPeduncleDrop.Value;
+        flowAxisDeg  = app.schoolFlowAxisField.Value;
+        cmPerUnit    = app.schoolCmPerUnitField.Value;
+
+        if app.schoolJumpFilter.Value
+            setStatus('Filtering DLC tracking jumps...');
+            try
+                fp = filter_dlc_jumps(fp, app.schoolJumpThreshField.Value, {snoutName, peduncleName});
+            catch ME
+                logFullError(ME);
+                uialert(fig, ME.message, 'Jump filter error');
+                setStatus('Jump filter failed.'); return
+            end
+        end
+
+        setStatus('Computing school metrics...');
+        try
+            pol  = compute_polarization(fp, snoutName, peduncleName, flowAxisDeg);
+            ang  = compute_angle_to_flow(fp, snoutName, peduncleName, flowAxisDeg);
+            dist = compute_distance_between_individuals(fp, snoutName, cmPerUnit);
+        catch ME
+            logFullError(ME);
+            uialert(fig, ME.message, 'School metrics error');
+            setStatus('School metrics computation failed.'); return
+        end
+
+        % ---- Results text ----
+        R = {};
+        R{end+1} = sprintf('=== SCHOOL METRICS: %s ===', fname_only(app.schoolFileField.Value));
+        R{end+1} = sprintf('%d fish, snout="%s", peduncle="%s", flow axis=%g deg', ...
+                            numel(fp), snoutName, peduncleName, flowAxisDeg);
+        R{end+1} = repmat('-',1,50);
+        R{end+1} = sprintf('POLARIZATION: mean=%.4f  SD=%.4f', pol.mean_polarization, pol.std_polarization);
+        R{end+1} = sprintf('  (frames with >=2 fish present: %d/%d)', ...
+                            sum(pol.n_fish_present>=2), numel(pol.n_fish_present));
+        R{end+1} = '';
+        R{end+1} = 'ANGLE TO FLOW (per fish):';
+        for k = 1:numel(ang)
+            R{end+1} = sprintf('  %-14s mean=%7.2f\xB0  SD=%6.2f\xB0  range=%6.2f\xB0  (%d/%d valid)', ...
+                ang(k).name, ang(k).mean_angle_to_flow_deg, ang(k).std_angle_to_flow_deg, ...
+                ang(k).range_angle_to_flow_deg, ang(k).n_valid_frames, numel(ang(k).heading_deg));
+        end
+        R{end+1} = '';
+        R{end+1} = sprintf('DISTANCE BETWEEN INDIVIDUALS (cm_per_unit=%.4g):', cmPerUnit);
+        R{end+1} = sprintf('  mean nearest-neighbor dist = %.4f', dist.overall_mean_nn_dist);
+        R{end+1} = sprintf('  mean pairwise dist         = %.4f', dist.overall_mean_pairwise_dist);
+        if cmPerUnit == 1.0
+            R{end+1} = '  (cm_per_unit left at default 1.0 -- confirm this is really cm for your data)';
+        end
+        app.schoolResultsArea.Value = R;
+
+        % ---- Plots (lightweight, single line each) ----
+        plot(app.schoolPolAx, pol.polarization, 'LineWidth', 1.2);
+        ylim(app.schoolPolAx, [0 1]);
+        plot(app.schoolDistAx, dist.mean_nn_dist, 'LineWidth', 1.2);
+
+        % ---- Stage CSV rows ----
+        collect_polarization_row(pol, snoutName, peduncleName, flowAxisDeg, numel(fp));
+        for k = 1:numel(ang)
+            collect_angle_to_flow_row(ang(k), flowAxisDeg);
+        end
+        collect_distance_row(dist, snoutName, cmPerUnit, numel(fp));
+
+        setStatus(sprintf('School metrics done. %d row(s) staged — use Export CSV.', numel(app.csv_rows)));
+    end
+
+    function s = fname_only(p)
+        [~, n, e] = fileparts(p);
+        s = [n e];
+    end
+
     % ---- Batch: pick multiple files of the same format ----
     function onSelectBatchFiles()
         [fnames, fpath] = uigetfile({'*.csv','CSV files (*.csv)'}, ...
@@ -1358,6 +1612,8 @@ function FishKinematicsApp()
         fps     = app.fpsField.Value;
         minFreq = app.minFreqField.Value;
         force2D = app.batchForce2D.Value;
+        jumpFilter = app.batchJumpFilter.Value;
+        jumpThreshFrac = app.batchJumpThreshField.Value;
         runFin    = app.batchRunFin.Value;
         runGirdle = app.batchRunGirdle.Value;
         runDuty   = app.batchRunDuty.Value;
@@ -1390,9 +1646,28 @@ function FishKinematicsApp()
             drawnow;
 
             try
+                % ---- Guard: skip DLC multi-animal files rather than hanging
+                % on the wrong loader (see the same guard in onRun for details) ----
+                probe = readcell(f, 'Range', 'A2:A2');
+                if ~isempty(probe) && (ischar(probe{1}) || isstring(probe{1})) ...
+                        && strcmpi(strtrim(string(probe{1})), 'individuals')
+                    logLine = sprintf(['[%d/%d] %s: SKIPPED — this is a DLC multi-animal export, ' ...
+                                        'not a single-fish format. Use the School Metrics tab for ' ...
+                                        'files like this.'], i, n, fname);
+                    L = app.batchLogArea.Value;
+                    if isequal(L, {sprintf('Starting batch: %d files...', n)}), L = {}; end
+                    L{end+1} = logLine;
+                    app.batchLogArea.Value = L;
+                    nFail = nFail + 1;
+                    continue;
+                end
+
                 % ---- Load + transform + kinematics (no plotting) ----
                 fp = load_fish_points_named(f, midlinePts, []);
                 fp = fp(1);
+                if jumpFilter
+                    fp = filter_dlc_jumps(fp, jumpThreshFrac);
+                end
                 if force2D && isfield(fp,'has_z') && fp.has_z
                     fp.has_z = false;
                     fp.points = fp.points(:,:,1:2);
@@ -1976,6 +2251,78 @@ function FishKinematicsApp()
         r.stance_is_estimate_not_measured = 'TRUE';   % explicit flag — never confuse with real contact-time data (string, not logical — write_csv_rows only recognizes char/string/numeric)
 
         r.row_type = 'stance_swing_estimate';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_polarization_row(pol, snoutName, peduncleName, flowAxisDeg, nFish)
+    % One summary row per school-metrics run.
+        if nargin < 1 || isempty(pol), return; end
+        timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+
+        r = struct();
+        r.timestamp    = timestamp;
+        r.source_file  = strtrim(app.schoolFileField.Value);
+        r.data_format  = 'school_multi_fish';
+        r.n_fish       = nFish;
+        r.snout_point  = snoutName;
+        r.peduncle_point = peduncleName;
+        r.flow_axis_deg = flowAxisDeg;
+
+        r.mean_polarization = pol.mean_polarization;
+        r.std_polarization  = pol.std_polarization;
+        r.n_frames_ge2_fish = sum(pol.n_fish_present >= 2);
+        r.n_frames_total    = numel(pol.n_fish_present);
+
+        r.row_type = 'polarization';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_angle_to_flow_row(ang, flowAxisDeg)
+    % One row PER FISH (angle-to-flow is a per-fish, not per-file, metric).
+        if nargin < 1 || isempty(ang), return; end
+        timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+
+        r = struct();
+        r.timestamp     = timestamp;
+        r.source_file   = strtrim(app.schoolFileField.Value);
+        r.data_format   = 'school_multi_fish';
+        r.animal        = ang.name;
+        r.flow_axis_deg = flowAxisDeg;
+
+        r.mean_angle_to_flow_deg  = ang.mean_angle_to_flow_deg;
+        r.std_angle_to_flow_deg   = ang.std_angle_to_flow_deg;
+        r.range_angle_to_flow_deg = ang.range_angle_to_flow_deg;
+        r.n_valid_frames          = ang.n_valid_frames;
+        r.n_frames_total          = numel(ang.heading_deg);
+
+        r.row_type = 'angle_to_flow';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_distance_row(dist, snoutName, cmPerUnit, nFish)
+    % One summary row per school-metrics run.
+        if nargin < 1 || isempty(dist), return; end
+        timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+
+        r = struct();
+        r.timestamp   = timestamp;
+        r.source_file = strtrim(app.schoolFileField.Value);
+        r.data_format = 'school_multi_fish';
+        r.n_fish      = nFish;
+        r.snout_point = snoutName;
+        r.cm_per_unit = cmPerUnit;
+        r.cm_per_unit_is_default = mat2str(cmPerUnit == 1.0);   % flag to check before trusting units as real cm
+
+        r.mean_nearest_neighbor_dist = dist.overall_mean_nn_dist;
+        r.mean_pairwise_dist         = dist.overall_mean_pairwise_dist;
+
+        r.row_type = 'distance_between_individuals';
 
         app.csv_rows{end+1} = r;
         updateCSVLabel();

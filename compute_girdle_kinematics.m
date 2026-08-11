@@ -123,8 +123,8 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
                  'frames where the midline transform also succeeded.'], girdlePointName, girdlePointName);
         protraction_range = NaN; lateral_range = NaN; girdle_freq = NaN;
     else
-        protraction_range = range(X(~isnan(X)));
-        lateral_range      = range(Y(~isnan(Y)));
+        protraction_range = max(X(~isnan(X))) - min(X(~isnan(X)));
+        lateral_range      = max(Y(~isnan(Y))) - min(Y(~isnan(Y)));
 
         % Fore-aft oscillation frequency — same NaN-safe dominant_freq logic
         % as compute_kinematics.m (all-NaN / zero-variance -> NaN, not a

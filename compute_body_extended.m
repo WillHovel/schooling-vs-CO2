@@ -93,7 +93,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
         if any(valid_ang)
             mean_body_angle = mean(body_angle_deg(valid_ang));
             std_body_angle  = std(body_angle_deg(valid_ang));
-            range_body_angle = range(body_angle_deg(valid_ang));
+            range_body_angle = max(body_angle_deg(valid_ang)) - min(body_angle_deg(valid_ang));
         else
             mean_body_angle = NaN; std_body_angle = NaN; range_body_angle = NaN;
         end
@@ -163,7 +163,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
             if any(valid_pitch)
                 mean_head_pitch  = mean(head_pitch_deg(valid_pitch));
                 std_head_pitch   = std(head_pitch_deg(valid_pitch));
-                range_head_pitch = range(head_pitch_deg(valid_pitch));
+                range_head_pitch = max(head_pitch_deg(valid_pitch)) - min(head_pitch_deg(valid_pitch));
             end
         end
 
@@ -190,7 +190,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
                 if any(valid_roll)
                     mean_roll  = mean(roll_deg(valid_roll));
                     std_roll   = std(roll_deg(valid_roll));
-                    range_roll = range(roll_deg(valid_roll));
+                    range_roll = max(roll_deg(valid_roll)) - min(roll_deg(valid_roll));
                 end
             else
                 warning(['compute_body_extended: roll_pair points "%s"/"%s" not found ' ...
