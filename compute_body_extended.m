@@ -29,6 +29,10 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
 %                           time relative to the camera/world frame — NOT
 %                           the same as lateral undulation; this is the
 %                           slope of the fitted body axis before rotation.
+%                           Continuous mod-180-unwrapped heading series
+%                           (mean/std relative to the first valid frame).
+%                           NaN for pre-transformed (CURVES) data, whose
+%                           heading information no longer exists.
 %     .mean_body_angle_deg / .std_body_angle_deg / .range_body_angle_deg
 %     .angular_velocity_deg_s   [nFrames x 1]  turning rate (deg/s)
 %
@@ -69,31 +73,70 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
         nPoints = size(pts, 2);
         has_z   = isfield(fish_points(fi),'has_z') && fish_points(fi).has_z;
         middle_idx = 2:nPoints-1;
+        % Same degenerate-fit guard as transform_fish: with a single
+        % middle point, polyfit returns the meaningless slope y/x — fall
+        % back to the head-to-tail chord (endpoints) instead.
+        if numel(middle_idx) >= 2
+            fit_idx = middle_idx;
+        else
+            fit_idx = [1, nPoints];
+        end
 
         % ================================================================
         % 1. BODY ANGLE — recompute the same middle-point line fit
         %    transform_fish uses, but report the angle itself instead of
         %    using it to rotate. This is the fish's heading in the raw
         %    (world/camera) coordinate frame.
+        %
+        %    CHANGE NOTE (bug fix): atand() returns a line ORIENTATION in
+        %    (-90, 90] — angles differing by 180 deg are the same line. A
+        %    fish that slowly turns past +/-90 deg used to produce a fake
+        %    ~180 deg jump in the per-frame trace (and garbage mean/std/
+        %    range/angular-velocity). Now the trace is unwrapped mod 180
+        %    deg, i.e. each step is forced into (-90, 90], so the output
+        %    is a continuous heading series (mean/std are relative to the
+        %    first valid frame's value).
+        %
+        %    For pre-transformed data (CURVES) the heading information no
+        %    longer exists (points are already in the body frame), so the
+        %    angle is left NaN rather than reporting a meaningless ~0.
         % ================================================================
+        pre_xformed = isfield(fish_points(fi),'pre_transformed') && fish_points(fi).pre_transformed;
+
         body_angle_deg = NaN(nFrames, 1);
-        for f = 1:nFrames
-            x_mid = squeeze(pts(f, middle_idx, 1));
-            y_mid = squeeze(pts(f, middle_idx, 2));
-            if any(isnan(x_mid)) || any(isnan(y_mid)), continue; end
-            b = polyfit(x_mid, y_mid, 1);
-            body_angle_deg(f) = atand(b(1));   % slope -> degrees, range (-90, 90]
+        if ~pre_xformed
+            for f = 1:nFrames
+                x_mid = squeeze(pts(f, fit_idx, 1));
+                y_mid = squeeze(pts(f, fit_idx, 2));
+                if any(isnan(x_mid)) || any(isnan(y_mid)), continue; end
+                b = polyfit(x_mid, y_mid, 1);
+                body_angle_deg(f) = atand(b(1));   % slope -> degrees, range (-90, 90]
+            end
         end
 
-        % Unwrap-free angular velocity (deg/s) — fine for a (-90,90] range
-        % since real frame-to-frame turning is small relative to 90 deg.
-        angular_velocity_deg_s = [NaN; diff(body_angle_deg)] * fps;
+        % Mod-180 unwrap: force each step into (-90, 90] so the heading
+        % trace is continuous across the atand() wraparound.
+        body_angle_unwrapped = NaN(nFrames, 1);
+        last_ang = NaN;
+        for f = 1:nFrames
+            a = body_angle_deg(f);
+            if isnan(a), continue; end
+            if isnan(last_ang)
+                body_angle_unwrapped(f) = a;
+            else
+                d = mod(a - last_ang + 90, 180) - 90;
+                body_angle_unwrapped(f) = last_ang + d;
+            end
+            last_ang = body_angle_unwrapped(f);
+        end
 
-        valid_ang = ~isnan(body_angle_deg);
+        angular_velocity_deg_s = [NaN; diff(body_angle_unwrapped)] * fps;
+
+        valid_ang = ~isnan(body_angle_unwrapped);
         if any(valid_ang)
-            mean_body_angle = mean(body_angle_deg(valid_ang));
-            std_body_angle  = std(body_angle_deg(valid_ang));
-            range_body_angle = range(body_angle_deg(valid_ang));
+            mean_body_angle  = mean(body_angle_unwrapped(valid_ang));
+            std_body_angle   = std(body_angle_unwrapped(valid_ang));
+            range_body_angle = range(body_angle_unwrapped(valid_ang));
         else
             mean_body_angle = NaN; std_body_angle = NaN; range_body_angle = NaN;
         end
@@ -102,9 +145,26 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
         % 2. SPEED — frame-to-frame displacement of the body centroid, in
         %    raw units, converted to BL/s using this frame's raw body
         %    length (bl_per_frame, from transform_fish).
+        %
+        %    CHANGE NOTE (bug fix): pre-transformed data (CURVES, Format E)
+        %    never gets a .bl_per_frame field because transform_fish skips
+        %    it — this used to throw "Unrecognized field name" and take
+        %    down the whole run. Such data is ALREADY in BL units (X from
+        %    0=head to ~1=tail), so the per-frame body length is exactly 1
+        %    and speed is simply centroid displacement x fps.
         % ================================================================
         centroid = squeeze(mean(pts(:,:,1:2), 2, 'omitnan'));   % [nFrames x 2]
-        bl_pf    = fish_points(fi).bl_per_frame;                 % [nFrames x 1], raw units
+
+        if isfield(fish_points(fi),'pre_transformed') && fish_points(fi).pre_transformed
+            bl_pf = ones(nFrames, 1);    % CURVES data already in BL units
+        elseif isfield(fish_points(fi), 'bl_per_frame') && ~isempty(fish_points(fi).bl_per_frame)
+            bl_pf = fish_points(fi).bl_per_frame;   % [nFrames x 1], raw units
+        else
+            warning(['compute_body_extended: %s has no bl_per_frame — speed/stride ' ...
+                     'will be NaN. Run transform_fish on this animal first.'], ...
+                     fish_points(fi).name);
+            bl_pf = NaN(nFrames, 1);
+        end
 
         speed_BL_s = NaN(nFrames, 1);
         for f = 2:nFrames
@@ -201,7 +261,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
 
         % ---- Pack ----
         ext(fi).name                    = fish_points(fi).name;
-        ext(fi).body_angle_deg          = body_angle_deg;
+        ext(fi).body_angle_deg          = body_angle_unwrapped;
         ext(fi).mean_body_angle_deg     = mean_body_angle;
         ext(fi).std_body_angle_deg      = std_body_angle;
         ext(fi).range_body_angle_deg    = range_body_angle;

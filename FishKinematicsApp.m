@@ -104,6 +104,14 @@ function FishKinematicsApp()
     app.fpsField = uieditfield(LP, 'numeric', 'Position', [250 y-24 78 26], ...
         'Value', 100, 'Limits', [1 1e5]);
     y = y - 30;
+    uilabel(LP, 'Text', 'Body length (csv units)', 'Position', [12 y-24 170 20], 'FontSize', 12);
+    app.blOverrideField = uieditfield(LP, 'numeric', 'Position', [250 y-24 78 26], ...
+        'Value', 0, 'Limits', [0 Inf], ...
+        'Tooltip', 'Known body length in the same units as the CSV coordinates. 0 = auto (head-to-tail distance).');
+    y = y - 26;
+    uilabel(LP, 'Text', '0 = auto (head->tail distance). Set your known body length, in the same units as the CSV, to override.', ...
+        'Position', [12 y-28 316 28], 'FontSize', 9, 'FontColor', [0.5 0.5 0.5], 'WordWrap', 'on');
+    y = y - 34;
     uilabel(LP, 'Text', 'Min frequency (Hz)', 'Position', [12 y-24 190 20], 'FontSize', 12);
     app.minFreqField = uieditfield(LP, 'numeric', 'Position', [250 y-24 78 26], ...
         'Value', 0.5, 'Limits', [0 1000]);
@@ -560,8 +568,6 @@ function FishKinematicsApp()
             dimStr  = '3D';
             if ~has_z_c, dimStr = '2D'; end
             app.fmtLabel.Text = sprintf('Format C: Numbered points %s  (pt1_X, pt2_X ... | 12 anatomical pts)', dimStr);
-            app.ptPanel.Visible = 'off';
-            showAxisPanel(has_z_c);
             % Populate fin dropdowns from numbered point anatomy
             tok_x   = regexp(cols, '^(pt\d+)_[Xx]$', 'tokens');
             pt_b    = cellfun(@(t) t{1}{1}, tok_x(~cellfun(@isempty,tok_x)), 'UniformOutput', false);
@@ -576,6 +582,21 @@ function FishKinematicsApp()
                 app.finRootDrop.Value = pt_b{1};   % pt1 = pect_base_R
                 app.finTipDrop.Value  = pt_b{2};   % pt2 = pect_tip_R
             end
+            % Midline point selection (same panel as Format B): the file's
+            % first/last points are fin/eye landmarks, NOT head/tail, so
+            % body length (and therefore speed/stride) is wrong unless the
+            % user picks a true head-to-tail sequence here. Checkbox
+            % UserData holds the raw column name ('ptN') so the stored
+            % selection matches what load_fish_points_named expects.
+            app.avail_pts = pt_b;
+            app.sel_order = {};
+            app.selList.Items = {};
+            app.ptPanel.Visible = 'on';
+            buildCheckboxes(numbered_pt_labels(pt_b));
+            for ci = 1:numel(app.checkboxes)
+                app.checkboxes{ci}.UserData = pt_b{ci};
+            end
+            showAxisPanel(has_z_c);
             return;
         end
 
@@ -638,11 +659,44 @@ function FishKinematicsApp()
     end
 
     % ---- Return names of currently checked points ----
+    % Prefers UserData (raw column name, e.g. 'pt3') when set — used for
+    % Format C where the visible label includes the anatomical name.
     function sel = getCheckedPoints()
         sel = {};
         for i = 1:numel(app.checkboxes)
             if app.checkboxes{i}.Value
-                sel{end+1} = app.checkboxes{i}.Text; %#ok<AGROW>
+                if isempty(app.checkboxes{i}.UserData)
+                    sel{end+1} = app.checkboxes{i}.Text; %#ok<AGROW>
+                else
+                    sel{end+1} = app.checkboxes{i}.UserData; %#ok<AGROW>
+                end
+            end
+        end
+    end
+
+    % ---- Display labels for Format C numbered points (ptN + anatomy) ----
+    function labels = numbered_pt_labels(pt_b)
+        ANAT = { ...
+            'pt1',  'pect_base_R'; ...
+            'pt2',  'pect_tip_R'; ...
+            'pt3',  'peduncle'; ...
+            'pt4',  'caudal_tip'; ...
+            'pt5',  'eye_R'; ...
+            'pt6',  'pelvic_base'; ...
+            'pt7',  'pelvic_tip'; ...
+            'pt8',  'anal_base'; ...
+            'pt9',  'anal_tip'; ...
+            'pt10', 'dorsal_tip'; ...
+            'pt11', 'eye_L'; ...
+            'pt12', 'pect_base_L'; ...
+        };
+        labels = cell(size(pt_b));
+        for i = 1:numel(pt_b)
+            row = strcmp(ANAT(:,1), pt_b{i});
+            if any(row)
+                labels{i} = [pt_b{i} ' - ' ANAT{row,2}];
+            else
+                labels{i} = pt_b{i};
             end
         end
     end
@@ -762,8 +816,26 @@ function FishKinematicsApp()
                     app.fp = app.fp(1);
 
                 case 'numbered'
-                    % Format C: auto-loads all numbered points via load_fish_points
-                    app.fp = load_fish_points(csvPath);
+                    % Format C: if the user picked >= 3 midline points in
+                    % the Point Selection panel, load those in order
+                    % (first = head, last = tail). Otherwise fall back to
+                    % ALL points in file order — the first/last numbered
+                    % points are fin/eye landmarks, not the true head and
+                    % tail, so body length, speed, and stride will be
+                    % wrong (see onFishSelected's auto-BL readout to
+                    % compare against a known length).
+                    if numel(app.sel_order) >= 3
+                        app.fp = load_fish_points_named(csvPath, app.sel_order, []);
+                        app.fp = app.fp(1);
+                    else
+                        uialert(fig, [ 'No midline points selected for this Format C file — ' ...
+                            'using ALL points in file order (first as head, last as tail). ' ...
+                            'Body length / speed / stride will be wrong unless those happen ' ...
+                            'to be the true head and tail. Tip: select 3+ midline points in ' ...
+                            'the Point Selection panel (first = head, last = tail) and re-run.' ], ...
+                            'Midline not selected');
+                        app.fp = load_fish_points(csvPath);
+                    end
 
                 case 'curves'
                     % Format E: CURVES — one file per fish, may be multi-selected
@@ -796,7 +868,9 @@ function FishKinematicsApp()
 
         setStatus('Transforming...');
         try
-            app.fp = transform_fish(app.fp);
+            bl_ov = app.blOverrideField.Value;
+            if ~(bl_ov > 0), bl_ov = []; end
+            app.fp = transform_fish(app.fp, bl_ov);
         catch ME; logFullError(ME); uialert(fig, ME.message, 'Transform error'); setStatus('Failed.'); return; end
 
         setStatus('Computing kinematics...');
@@ -816,7 +890,7 @@ function FishKinematicsApp()
             % Don't hard-fail the whole run over this — kinematics above
             % already succeeded and is more important to preserve.
             logFullError(ME);
-            warning('compute_body_extended failed: %s', ME.message);
+            warning(ME.identifier, 'compute_body_extended failed: %s', ME.message);
             app.ext = [];
         end
 
@@ -853,6 +927,17 @@ function FishKinematicsApp()
             nPts     = numel(pnames);
             L{end+1} = sprintf('HEAD point (pt 1/%d):  %s', nPts, headName);
             L{end+1} = sprintf('TAIL point (pt %d/%d): %s', nPts, nPts, tailName);
+        end
+
+        % Body-length sanity check: show the auto-detected length (median
+        % over frames, csv units) so users can compare with a known length.
+        % If it's ~10x too small, the first/last points aren't the true
+        % head/tail and speed/stride will be inflated by that factor.
+        if isfield(fp, 'bl_per_frame') && ~isempty(fp.bl_per_frame)
+            bl_auto = median(fp.bl_per_frame, 'omitnan');
+            if ~isnan(bl_auto)
+                L{end+1} = sprintf('Body length (auto): %.4g csv-units  <-- compare with known BL', bl_auto);
+            end
         end
 
         L{end+1} = repmat('-',1,34);
@@ -1373,11 +1458,16 @@ function FishKinematicsApp()
                 % ---- Load + transform + kinematics (no plotting) ----
                 fp = load_fish_points_named(f, midlinePts, []);
                 fp = fp(1);
+                % Axis-mapping settings must apply in batch exactly as in
+                % single-run mode (previously skipped here).
+                fp = remap_axes(fp);
                 if force2D && isfield(fp,'has_z') && fp.has_z
                     fp.has_z = false;
                     fp.points = fp.points(:,:,1:2);
                 end
-                fp = transform_fish(fp);
+                bl_ov = app.blOverrideField.Value;
+                if ~(bl_ov > 0), bl_ov = []; end
+                fp = transform_fish(fp, bl_ov);
                 kine = compute_kinematics(fp, fps, minFreq);
                 ext  = compute_body_extended(fp, fps, kine, {});
 
@@ -1394,8 +1484,16 @@ function FishKinematicsApp()
                 app.fishList.Value = kine.name;
 
                 collect_kine_rows();
-                logLine = sprintf('[%d/%d] %s: OK (%d/%d frames valid, head_TBF=%s Hz)', ...
-                    i, n, fname, sum(~isnan(fp.X(:,1))), size(fp.X,1), fmt_nan(kine.head_TBF));
+                % Auto-detected body length (median over frames, csv units)
+                % — sanity check: compare with your known fish length. A
+                % value ~10x too small means the selected midline points
+                % don't span the true head-to-tail distance.
+                bl_auto = NaN;
+                if isfield(fp, 'bl_per_frame') && ~isempty(fp.bl_per_frame)
+                    bl_auto = median(fp.bl_per_frame, 'omitnan');
+                end
+                logLine = sprintf('[%d/%d] %s: OK (%d/%d frames valid, BL(auto)=%s csv-units, head_TBF=%s Hz)', ...
+                    i, n, fname, sum(~isnan(fp.X(:,1))), size(fp.X,1), fmt_nan(bl_auto), fmt_nan(kine.head_TBF));
 
                 % ---- Optional fin / girdle / duty factor ----
                 if runFin

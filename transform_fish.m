@@ -1,9 +1,19 @@
-function fish_points = transform_fish(fish_points)
+function fish_points = transform_fish(fish_points, bl_override)
 % TRANSFORM_FISH  Rotate and translate each fish's midline so the mean
 %                 swimming axis is parallel to the X-axis, with the head
 %                 at X = 0.
 %
 %   fish_points = transform_fish(fish_points)
+%   fish_points = transform_fish(fish_points, bl_override)
+%
+%   bl_override — OPTIONAL known body length (same units as the CSV
+%                 coordinates), scalar (applied to all fish) or 1xN per
+%                 fish; empty/NaN = auto. Overrides the per-frame
+%                 head-to-tail distance used to normalize .X/.Y[/.Z] and
+%                 to fill .bl_per_frame. Use this when the first/last
+%                 tracked points are not the true head/tail (e.g. Format C
+%                 numbered files whose endpoints are fin bases) or when
+%                 you have a calibrated body length.
 %
 %   Works with any number of points (>= 3) and with 2-D or 3-D data.
 %   The struct schema is identical to the output of load_fish_points /
@@ -90,6 +100,17 @@ function fish_points = transform_fish(fish_points)
         end
 
         middle_idx = 2:nPoints-1;   % exclude head (1) and tail (end)
+        % CHANGE NOTE (bug fix): with only 3 tracked points there is a
+        % SINGLE middle point and polyfit(x,y,1) silently returns the
+        % meaningless min-norm "slope" y/x — the body axis was rotated by
+        % an arbitrary angle and body angle was garbage. Fall back to the
+        % head-to-tail chord (endpoints) whenever fewer than 2 middle
+        % points exist.
+        if numel(middle_idx) >= 2
+            fit_idx = middle_idx;
+        else
+            fit_idx = [1, nPoints];
+        end
 
         X = NaN(nFrames, nPoints);
         Y = NaN(nFrames, nPoints);
@@ -122,10 +143,10 @@ function fish_points = transform_fish(fish_points)
                 z_all = squeeze(pts(f, :, 3));
             end
 
-            x_mid = x_all(middle_idx);
-            y_mid = y_all(middle_idx);
+            x_mid = x_all(fit_idx);
+            y_mid = y_all(fit_idx);
 
-            % Skip frame if any middle point is missing (can't fit the axis line)
+            % Skip frame if any axis-fit point is missing (can't fit the axis line)
             if any(isnan(x_mid)) || any(isnan(y_mid)), continue; end
 
             % Skip frame if either ENDPOINT is missing — body length is
@@ -159,6 +180,21 @@ function fish_points = transform_fish(fish_points)
 
             if isnan(bl) || bl <= eps
                 continue;   % degenerate frame (endpoints coincide) — leave NaN
+            end
+
+            % Optional known-body-length override (same units as CSV coords)
+            if nargin >= 2 && ~isempty(bl_override)
+                if isscalar(bl_override)
+                    bl = bl_override;
+                else
+                    bl = bl_override(fi);
+                end
+                if ~isfinite(bl) || bl <= eps
+                    warning(['transform_fish: invalid bl_override for %s — ' ...
+                             'ignoring override and using measured length.'], ...
+                             fish_points(fi).name);
+                    bl = abs(xN - x1);
+                end
             end
 
             % If point-end rotated to a SMALLER x than point 1, mirror the
