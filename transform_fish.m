@@ -72,7 +72,11 @@ function fish_points = transform_fish(fish_points, bl_override)
 %     .X    [nFrames x nPoints]   body-axis position in BL  (0=head, ~1=tail)
 %     .Y    [nFrames x nPoints]   lateral displacement in BL (0 = body axis)
 %     .Z    [nFrames x nPoints]   dorso-ventral deviation in BL from head (3-D only)
-%     .pct_frames_valid   scalar  % of frames that produced a valid transform
+%     .pct_frames_valid   scalar  % of TRACKED frames (rows with any data,
+%                                 padding rows excluded) that produced a
+%                                 valid transform
+%     .n_data_frames      scalar  # of tracked rows (excludes leading/
+%                                 trailing all-empty padding rows)
 %     .n_frames_reversed  scalar  # of frames where point-end (not point 1)
 %                                 was auto-detected as the head — a high
 %                                 count here means your point order is
@@ -93,6 +97,12 @@ function fish_points = transform_fish(fish_points, bl_override)
         nPoints = size(pts, 2);
         nDims   = size(pts, 3);
         has_z   = (nDims == 3) && isfield(fish_points, 'has_z') && fish_points(fi).has_z;
+
+        % Tracked data window: some CSVs pad the trial with long runs of
+        % all-empty rows before/after the actual data. Valid-frame
+        % percentages should be computed over rows that contain ANY
+        % tracked point, not the padded total row count.
+        n_data_frames = sum(any(any(~isnan(pts), 3), 2));
 
         if nPoints < 3
             error('transform_fish: need at least 3 points; %s has %d.', ...
@@ -231,7 +241,7 @@ function fish_points = transform_fish(fish_points, bl_override)
             transform_params(f).sign_flip = sign_flip;
         end
 
-        pct_valid = 100 * n_valid / nFrames;
+        pct_valid = 100 * n_valid / max(n_data_frames, 1);
 
         fish_points(fi).X = X;
         fish_points(fi).Y = Y;
@@ -239,12 +249,13 @@ function fish_points = transform_fish(fish_points, bl_override)
             fish_points(fi).Z = Z;
         end
         fish_points(fi).pct_frames_valid  = pct_valid;
+        fish_points(fi).n_data_frames     = n_data_frames;     % NEW — tracked rows (excludes padding)
         fish_points(fi).n_frames_reversed = n_reversed;
         fish_points(fi).bl_per_frame      = bl_per_frame;      % NEW — raw body length per frame
         fish_points(fi).transform_params  = transform_params;  % NEW — for projecting other points (fin roots, girdle pts) into the same body-relative frame
 
-        fprintf('transform_fish: %s | %d/%d frames valid (%.1f%%)', ...
-                fish_points(fi).name, n_valid, nFrames, pct_valid);
+        fprintf('transform_fish: %s | %d/%d tracked frames valid (%.1f%%)', ...
+                fish_points(fi).name, n_valid, n_data_frames, pct_valid);
         if n_reversed > 0
             fprintf('  [%d/%d frame(s) mirrored: point-end rotated ahead of point 1]', ...
                     n_reversed, max(n_valid,1));

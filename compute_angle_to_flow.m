@@ -31,6 +31,16 @@ function ang = compute_angle_to_flow(fish_points, snoutName, peduncleName, flowA
 %                            if up/down or left/right sign matters for
 %                            your analysis.
 %     .mean_angle_to_flow_deg / .std_angle_to_flow_deg / .range_angle_to_flow_deg
+%         CIRCULAR statistics — the mean is the direction of the average
+%         unit heading vector (atan2d of the summed sines/cosines) and the
+%         std is the circular standard deviation sqrt(-2*ln R) in deg,
+%         where R is the mean resultant length. A plain arithmetic mean/std
+%         of wrapped angles is garbage whenever headings straddle the
+%         +/-180 wrap (e.g. fish swimming straight into the flow at ~180
+%         deg: +179/-179 frame noise averages to ~0 with an SD of ~180,
+%         i.e. "pointing in every direction" while polarization says
+%         otherwise). Range is the total angular span of the data measured
+%         relative to the circular mean, so it is also wrap-safe.
 %     .n_valid_frames
 
     if nargin < 4 || isempty(flowAxisDeg), flowAxisDeg = 0; end
@@ -61,9 +71,19 @@ function ang = compute_angle_to_flow(fish_points, snoutName, peduncleName, flowA
 
         valid = ~isnan(angle_to_flow);
         if any(valid)
-            mean_a = mean(angle_to_flow(valid));
-            std_a  = std(angle_to_flow(valid));
-            range_a = range(angle_to_flow(valid));
+            a = angle_to_flow(valid);
+            % Circular mean = direction of the average unit heading vector
+            mean_a = atan2d(sum(sind(a)), sum(cosd(a)));
+            R = hypot(sum(cosd(a)), sum(sind(a))) / numel(a);   % resultant length, 0..1
+            if R > 0
+                std_a = sqrt(-2*log(R)) * 180/pi;   % circular SD in deg
+            else
+                std_a = 180;   % perfectly scattered headings
+            end
+            % Wrap-safe range: angular span of the data around the
+            % circular mean (so 179/-179 gives ~2 deg, not 358).
+            dev = mod(a - mean_a + 180, 360) - 180;
+            range_a = max(dev) - min(dev);
         else
             mean_a = NaN; std_a = NaN; range_a = NaN;
         end

@@ -115,7 +115,10 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
     [X, Y, Z] = apply_body_transform(raw_xyz, fish_points.transform_params);
 
     n_valid  = sum(~isnan(X) & ~isnan(Y));
-    pct_valid = 100 * n_valid / nFrames;
+    % Tracked window: rows where the girdle point has any data — excludes
+    % leading/trailing all-empty padding rows common in exported CSVs.
+    n_girdle_window = sum(any(~isnan(raw_xyz), 2));
+    pct_valid = 100 * n_valid / max(n_girdle_window, 1);
 
     if n_valid == 0
         warning(['compute_girdle_kinematics: %s has ZERO valid frames after projection — ' ...
@@ -140,10 +143,11 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
     girdle.girdle_freq_Hz        = girdle_freq;
     girdle.n_valid  = n_valid;
     girdle.n_frames = nFrames;
+    girdle.n_tracked_frames = n_girdle_window;
     girdle.pct_valid = pct_valid;
 
-    fprintf(['Girdle (%s): %d/%d frames (%.1f%%) | protraction range=%s BL  ' ...
-             'lateral range=%s BL  freq=%s Hz\n'], girdlePointName, n_valid, nFrames, pct_valid, ...
+    fprintf(['Girdle (%s): %d/%d tracked frames (%.1f%%) | protraction range=%s BL  ' ...
+             'lateral range=%s BL  freq=%s Hz\n'], girdlePointName, n_valid, n_girdle_window, pct_valid, ...
             fmt_val(protraction_range), fmt_val(lateral_range), fmt_val(girdle_freq));
 end
 

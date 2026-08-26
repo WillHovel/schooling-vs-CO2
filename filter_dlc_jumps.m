@@ -117,6 +117,9 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
         threshold = jump_threshold_frac * body_length;
 
         % ---- Per-point local-median outlier filtering ----
+        % Tracked point-frames (XY present) — excludes leading/trailing
+        % all-empty padding rows common in exported CSVs.
+        n_present = sum(any(~isnan(pts(:, :, 1:min(2,nDims))), 3), 'all');
         n_filtered = 0;
         for pi = 1:nPoints
             for f = 1:nFrames
@@ -143,14 +146,14 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
 
         fish_points(k).points = pts;
         fish_points(k).n_points_filtered  = n_filtered;
-        fish_points(k).pct_points_filtered = 100 * n_filtered / (nFrames * nPoints);
+        fish_points(k).pct_points_filtered = 100 * n_filtered / max(n_present, 1);
         fish_points(k).jump_filter_body_length  = body_length;
         fish_points(k).jump_filter_threshold_frac = jump_threshold_frac;
 
         fprintf(['filter_dlc_jumps: %s | body length ref = %.4g | threshold = %.4g (%.0f%% of body) | ' ...
-                 '%d/%d point-frames filtered (%.2f%%)\n'], ...
+                 '%d/%d tracked point-frames filtered (%.2f%%)\n'], ...
                 safe_name(fish_points(k)), body_length, threshold, 100*jump_threshold_frac, ...
-                n_filtered, nFrames*nPoints, fish_points(k).pct_points_filtered);
+                n_filtered, n_present, fish_points(k).pct_points_filtered);
     end
 end
 

@@ -147,7 +147,12 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
     yaw_v       = yaw(valid);
     pitch_v     = pitch(valid);
     roll_v      = roll(valid);
-    spd_v       = tip_speed(valid);
+    % CHANGE NOTE (bug fix): frame 1 has no prior frame, so its step_dist
+    % is 0 and including it in the speed stats dragged mean_speed down by
+    % 1/nFrames. Only frames with a valid previous frame carry a real
+    % step speed.
+    has_prev    = [false; valid(1:end-1)];
+    spd_v       = tip_speed(valid & has_prev);
     ang_vel_v   = ang_vel(valid);
     len_v       = fin_length(valid);
 
@@ -198,12 +203,17 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
     fin.std_ang_vel  = std(ang_vel_v,  'omitnan');
     fin.peak_ang_vel = max(ang_vel_v);
 
-    fin.n_valid  = sum(valid);
-    fin.n_frames = nFrames;
-    fin.pct_valid = 100 * sum(valid) / nFrames;
+    % Tracked window: rows where the fin has any data — excludes
+    % leading/trailing all-empty padding rows common in exported CSVs.
+    n_fin_window = sum(any(~isnan(root_xyz) | ~isnan(tip_xyz), 2));
 
-    fprintf('Fin: %s -> %s | %d/%d valid frames | length=%.3f\xB1%.3f\n', ...
-            rootName, tipName, fin.n_valid, nFrames, fin.mean_length, fin.std_length);
+    fin.n_valid   = sum(valid);
+    fin.n_frames  = nFrames;
+    fin.n_tracked_frames = n_fin_window;
+    fin.pct_valid = 100 * sum(valid) / max(n_fin_window, 1);
+
+    fprintf('Fin: %s -> %s | %d/%d tracked frames valid | length=%.3f\xB1%.3f\n', ...
+            rootName, tipName, fin.n_valid, n_fin_window, fin.mean_length, fin.std_length);
     fprintf('  Yaw  : mean=%.1f SD=%.1f range=%.1f deg\n', fin.mean_yaw,   fin.std_yaw,   fin.range_yaw);
     fprintf('  Pitch: mean=%.1f SD=%.1f range=%.1f deg\n', fin.mean_pitch, fin.std_pitch, fin.range_pitch);
     fprintf('  Roll : mean=%.1f SD=%.1f range=%.1f deg\n', fin.mean_roll,  fin.std_roll,  fin.range_roll);

@@ -52,6 +52,7 @@ function FishKinematicsApp()
     app.girdle_data  = [];   % computed girdle protraction/retraction results
     app.stance_data  = [];   % computed stance/swing duty-factor results
     app.pect_data = [];   % pectoral phase result (Format D)
+    app.school_fp = [];   % multi-fish struct array for School Metrics tab (RAW, untransformed)
     % Axis mapping: which signed CSV axis maps to each world role.
     % Default = identity (CSV X→top-X, CSV Y→top-Y, CSV Z→vertical).
     app.axis_map.top_x = '+X';
@@ -116,6 +117,48 @@ function FishKinematicsApp()
     app.minFreqField = uieditfield(LP, 'numeric', 'Position', [250 y-24 78 26], ...
         'Value', 0.5, 'Limits', [0 1000]);
     y = y - 42;
+
+    % ---- Flow speed (optional) — through-water speed + Strouhal ----
+    y = section_label(LP, 'FLOW SPEED (OPTIONAL)', y);
+    uilabel(LP, 'Text', 'Flow speed', 'Position', [12 y-24 70 20], 'FontSize', 12);
+    app.flowSpeedField = uieditfield(LP, 'numeric', 'Position', [86 y-24 66 26], ...
+        'Value', 0, 'Limits', [0 Inf], ...
+        'Tooltip', ['Tank/flume flow speed. 0 = no flow correction (ground speed only). ' ...
+                    'Through-water speed and Strouhal use this when > 0.']);
+    app.flowUnitsDrop = uidropdown(LP, 'Position', [158 y-22 62 24], ...
+        'Items', {'BL/s','cm/s','m/s','mm/s'}, 'Value', 'cm/s', 'FontSize', 10, ...
+        'Tooltip', 'Units of the flow speed. Not BL/s -> needs the body length below (same real units).');
+    app.flowDirDrop = uidropdown(LP, 'Position', [226 y-22 102 24], ...
+        'Items', {'Against','With'}, 'Value', 'Against', 'FontSize', 10, ...
+        'Tooltip', ['Against = flow opposes the fish (upstream): through-water = ground + flow. ' ...
+                    'With = flow assists (downstream): through-water = |ground - flow|.']);
+    y = y - 26;
+    uilabel(LP, 'Text', '0 = no flow. Through-water speed = ground +/- flow. Strouhal uses through-water speed when flow > 0.', ...
+        'Position', [12 y-28 316 28], 'FontSize', 9, 'FontColor', [0.5 0.5 0.5], 'WordWrap', 'on');
+    y = y - 32;
+    uilabel(LP, 'Text', 'Body length (real units)', 'Position', [12 y-24 170 20], 'FontSize', 12);
+    app.realBodyLenField = uieditfield(LP, 'numeric', 'Position', [250 y-24 78 26], ...
+        'Value', 0, 'Limits', [0 Inf], ...
+        'Tooltip', ['Fish body length in the SAME real units as the flow speed (e.g. cm for cm/s). ' ...
+                    'Only needed to convert flow speed to BL/s. 0 = cannot convert.']);
+    y = y - 26;
+    uilabel(LP, 'Text', 'Only needed when flow units are cm/s, m/s or mm/s. Leave 0 when flow is in BL/s.', ...
+        'Position', [12 y-20 316 20], 'FontSize', 9, 'FontColor', [0.5 0.5 0.5], 'WordWrap', 'on');
+    y = y - 28;
+
+    % ---- DLC jump filter (optional) ----
+    y = section_label(LP, 'DLC JUMP FILTER (OPTIONAL)', y);
+    app.chkJumpFilter = uicheckbox(LP, 'Position', [12 y-24 210 22], 'FontSize', 11, ...
+        'Text', 'Filter DLC tracking jumps', 'Value', false, ...
+        'Tooltip', ['Replaces a point with NaN in any frame where it deviates from its ' ...
+                    'own local-median trajectory by more than the threshold fraction of ' ...
+                    'body length — catches a point that briefly teleports to the wrong ' ...
+                    'feature. Applied right after loading, before axis alignment.']);
+    app.jumpThreshField = uieditfield(LP, 'numeric', 'Position', [230 y-24 50 22], ...
+        'Value', 0.5, 'Limits', [0.05 5], 'Tooltip', 'Threshold, as a fraction of body length');
+    uilabel(LP, 'Position', [284 y-24 44 22], 'FontSize', 10, 'FontColor', [0.5 0.5 0.5], ...
+        'Text', 'x BL');
+    y = y - 40;
 
     % ---- Axis Mapping (shown only for 3D formats) ----
     axMapH = 122;
@@ -423,6 +466,7 @@ function FishKinematicsApp()
     tabBatch = uitab(tg, 'Title', 'Batch Processing');
 
     app.batchFiles = {};   % cell array of full file paths selected for batch
+    app.fname_parse = struct('id','','speed',NaN,'bodylength',NaN);   % last filename-parsed values
 
     batchInfoPanel = uipanel(tabBatch, 'Units', 'normalized', ...
         'Position', [0 0.93 1 0.06], 'BorderType', 'none', ...
@@ -442,40 +486,73 @@ function FishKinematicsApp()
     app.batchCountLabel = uilabel(batchLeftPanel, 'Position', [180 830 200 30], ...
         'Text', '0 files selected', 'FontSize', 11, 'FontColor', [0.4 0.4 0.4]);
 
-    app.batchFileList = uilistbox(batchLeftPanel, 'Position', [12 620 356 200], ...
+    app.batchFileList = uilistbox(batchLeftPanel, 'Position', [12 650 356 170], ...
         'Items', {}, 'FontSize', 9);
 
-    uilabel(batchLeftPanel, 'Position', [12 588 356 20], 'FontSize', 10, ...
+    uilabel(batchLeftPanel, 'Position', [12 618 356 20], 'FontSize', 10, ...
         'FontWeight', 'bold', 'Text', 'Midline points (head → tail, comma-separated):');
-    app.batchPointsField = uieditfield(batchLeftPanel, 'text', 'Position', [12 562 356 26], ...
+    app.batchPointsField = uieditfield(batchLeftPanel, 'text', 'Position', [12 592 356 26], ...
         'FontSize', 10, ...
         'Value', 'BP_1_SnoutML,BP_2_PectoralML,BP_3_PelvicML,BP_4_AnalML,BP_5_CaudalML');
 
-    app.batchForce2D = uicheckbox(batchLeftPanel, 'Position', [12 528 356 22], 'FontSize', 10, ...
+    app.batchForce2D = uicheckbox(batchLeftPanel, 'Position', [12 562 356 22], 'FontSize', 10, ...
         'Text', 'Force 2D midline (ignore Z, even if present)', 'Value', true, ...
         'Tooltip', ['Recommended when the batch mixes files that do and don''t have full 3D ' ...
                     'tracking (e.g. some missing snout Z) — keeps every file in the batch ' ...
                     'directly comparable instead of some being 2D and some 3D.']);
 
-    uilabel(batchLeftPanel, 'Position', [12 494 356 20], 'FontSize', 10, ...
+    uilabel(batchLeftPanel, 'Position', [12 530 356 20], 'FontSize', 10, ...
         'FontWeight', 'bold', 'Text', 'Also run (uses Root/Tip from Fin Analysis tab):');
-    app.batchRunFin = uicheckbox(batchLeftPanel, 'Position', [12 468 340 22], ...
+    app.batchRunFin = uicheckbox(batchLeftPanel, 'Position', [12 504 340 22], ...
         'FontSize', 10, 'Text', 'Fin analysis', 'Value', false);
-    app.batchRunGirdle = uicheckbox(batchLeftPanel, 'Position', [12 444 340 22], ...
+    app.batchRunGirdle = uicheckbox(batchLeftPanel, 'Position', [12 480 340 22], ...
         'FontSize', 10, 'Text', 'Girdle analysis (uses Root point)', 'Value', false);
-    app.batchRunDuty = uicheckbox(batchLeftPanel, 'Position', [12 420 340 22], ...
+    app.batchRunDuty = uicheckbox(batchLeftPanel, 'Position', [12 456 340 22], ...
         'FontSize', 10, 'Text', 'Duty factor estimate (requires Fin analysis above)', 'Value', false);
 
-    uilabel(batchLeftPanel, 'Position', [12 388 356 34], 'FontSize', 9, 'WordWrap', 'on', ...
+    % ---- Filename parsing: extract per-file settings from the name ----
+    uilabel(batchLeftPanel, 'Position', [12 434 356 20], 'FontSize', 10, ...
+        'FontWeight', 'bold', 'Text', 'Extract settings from filename:');
+    app.batchParseFilenames = uicheckbox(batchLeftPanel, 'Position', [12 410 356 22], ...
+        'FontSize', 10, ...
+        'Text', 'Parse {speed} / {bodylength} / {id} from each filename', 'Value', false, ...
+        'Tooltip', ['When checked, each file''s name is matched against the pattern below and the ' ...
+                    'extracted flow speed (and body length) OVERRIDE the Flow Speed panel for that ' ...
+                    'file — no need to re-run the batch per setting. Files that don''t match fall ' ...
+                    'back to the panel values (with a log warning).']);
+    app.batchPatternField = uieditfield(batchLeftPanel, 'text', 'Position', [12 382 356 26], ...
+        'FontSize', 10, ...
+        'Placeholder', 'e.g. WSBS_*_{speed}BL*_{id}xyzpts', ...
+        'Tooltip', ['Your file naming format. Tokens: {speed} = flow speed number, ' ...
+                    '{bodylength} = body length number, {id} = any text (individual ID, ' ...
+                    'exported to CSV). * = any text. Matches the filename WITHOUT the .csv ' ...
+                    'extension. {speed} units come from the Flow Speed panel units dropdown; ' ...
+                    'if not BL/s, {bodylength} (or the panel body length) is used for conversion.']);
+    uilabel(batchLeftPanel, 'Position', [12 352 356 28], 'FontSize', 9, 'WordWrap', 'on', ...
         'FontColor', [0.5 0.5 0.5], 'Text', ...
-        'FPS and Min Frequency are taken from the Kinematics tab — set those first.');
+        ['Matches the filename without the .csv extension. Example: pattern ' ...
+         '"WSBS_*_{speed}BL*_{id}xyzpts" parses WSBS_Swalk_0.5BL.1_Shark02xyzpts.csv ' ...
+         'as speed = 0.5, id = Shark02 (the * after BL absorbs the ".1" trial tag).']);
 
-    app.batchRunButton = uibutton(batchLeftPanel, 'Text', 'Run Batch', 'Position', [12 348 160 34], ...
+    uilabel(batchLeftPanel, 'Position', [12 320 356 26], 'FontSize', 9, 'WordWrap', 'on', ...
+        'FontColor', [0.5 0.5 0.5], 'Text', ...
+        ['FPS, Min Frequency, and Flow speed are taken from the Kinematics tab ' ...
+         '(left panel) — set those first.']);
+
+    app.batchRunButton = uibutton(batchLeftPanel, 'Text', 'Run Batch', 'Position', [12 280 160 34], ...
         'FontSize', 12, 'BackgroundColor', [0.2 0.55 0.3], 'FontColor', [1 1 1], ...
         'ButtonPushedFcn', @(~,~) onRunBatch());
 
-    app.batchProgressLabel = uilabel(batchLeftPanel, 'Position', [12 318 356 24], ...
+    app.batchProgressLabel = uilabel(batchLeftPanel, 'Position', [12 250 356 24], ...
         'FontSize', 10, 'FontColor', [0.4 0.4 0.4], 'Text', '');
+
+    app.batchJumpFilter = uicheckbox(batchLeftPanel, 'Position', [12 222 210 22], 'FontSize', 10, ...
+        'Text', 'Filter DLC tracking jumps', 'Value', false, ...
+        'Tooltip', 'Same as the Kinematics tab checkbox — applied to every file in the batch.');
+    app.batchJumpThreshField = uieditfield(batchLeftPanel, 'numeric', 'Position', [228 222 50 22], ...
+        'Value', 0.5, 'Limits', [0.05 5]);
+    uilabel(batchLeftPanel, 'Position', [282 222 44 22], 'FontSize', 10, 'FontColor', [0.5 0.5 0.5], ...
+        'Text', 'x BL');
 
     % ---- Right column: scrolling log, one line per file ----
     batchRightPanel = uipanel(tabBatch, 'Units', 'normalized', 'Position', [0.33 0 0.67 0.93], ...
@@ -484,6 +561,82 @@ function FishKinematicsApp()
         'Editable', 'off', 'FontSize', 10, 'FontName', 'Courier New', 'Value', {'(no batch run yet)'});
     batchRightPanel.SizeChangedFcn = @(src,~) set(app.batchLogArea, ...
         'Position', [0 0 max(1,src.Position(3)) max(1,src.Position(4))]);
+
+    %% ================================================================
+    %  SCHOOL METRICS TAB (multi-fish: polarization, angle-to-flow,
+    %  distance between individuals)
+    %% ================================================================
+    app.tabSchool = uitab(tg, 'Title', 'School Metrics');
+
+    schoolInfoPanel = uipanel(app.tabSchool, 'Units', 'normalized', ...
+        'Position', [0 0.93 1 0.06], 'BorderType', 'none', ...
+        'BackgroundColor', [0.95 0.95 0.95], 'AutoResizeChildren', 'off');
+    uilabel(schoolInfoPanel, 'Position', [8 2 1200 32], 'FontSize', 12, ...
+        'FontColor', [0.4 0.4 0.6], 'WordWrap', 'on', 'Text', ...
+        ['Group-level metrics across ALL fish in one multi-animal file (native DLC multi-animal ' ...
+         'exports or Fish1_P1_x, Fish2_P1_x, ... columns). These use RAW (untransformed) ' ...
+         'coordinates on purpose — school-level angle and distance only make sense in one shared ' ...
+         'coordinate frame, not each fish''s own private one.']);
+
+    schoolLeftPanel = uipanel(app.tabSchool, 'Units', 'normalized', 'Position', [0 0 0.32 0.93], ...
+        'BorderType', 'line', 'AutoResizeChildren', 'off', 'Scrollable', 'on');
+
+    uilabel(schoolLeftPanel, 'Position', [12 850 356 20], 'FontSize', 10, 'FontWeight', 'bold', ...
+        'Text', 'Multi-fish CSV file:');
+    app.schoolFileField = uieditfield(schoolLeftPanel, 'text', 'Position', [12 824 260 26], ...
+        'Value', '', 'Editable', 'off');
+    uibutton(schoolLeftPanel, 'Text', 'Browse...', 'Position', [278 824 90 26], ...
+        'ButtonPushedFcn', @(~,~) onSchoolBrowse());
+
+    app.schoolLoadedLabel = uilabel(schoolLeftPanel, 'Position', [12 794 356 24], ...
+        'FontSize', 10, 'FontColor', [0.5 0.5 0.5], 'Text', 'No file loaded.');
+
+    uilabel(schoolLeftPanel, 'Position', [12 764 356 20], 'FontSize', 10, 'FontWeight', 'bold', ...
+        'Text', 'Snout point:');
+    app.schoolSnoutDrop = uidropdown(schoolLeftPanel, 'Position', [130 764 238 24], ...
+        'Items', {'(load file first)'});
+    uilabel(schoolLeftPanel, 'Position', [12 734 356 20], 'FontSize', 10, 'FontWeight', 'bold', ...
+        'Text', 'Peduncle point:');
+    app.schoolPeduncleDrop = uidropdown(schoolLeftPanel, 'Position', [130 734 238 24], ...
+        'Items', {'(load file first)'});
+
+    uilabel(schoolLeftPanel, 'Position', [12 700 200 20], 'FontSize', 10, ...
+        'Text', 'Flow axis (deg, 0 = +X):');
+    app.schoolFlowAxisField = uieditfield(schoolLeftPanel, 'numeric', 'Position', [230 700 78 24], ...
+        'Value', 0, 'Limits', [-360 360], ...
+        'Tooltip', 'Heading angle that counts as "aligned with flow" in your raw/camera coordinates.');
+
+    uilabel(schoolLeftPanel, 'Position', [12 668 200 20], 'FontSize', 10, ...
+        'Text', 'cm per raw unit:');
+    app.schoolCmPerUnitField = uieditfield(schoolLeftPanel, 'numeric', 'Position', [230 668 78 24], ...
+        'Value', 1.0, 'Limits', [1e-6 1e6], ...
+        'Tooltip', ['Conversion factor from your CSV''s raw coordinate units to cm, for the ' ...
+                    'distance-between-individuals metric. Leave at 1.0 if your data is already ' ...
+                    'calibrated to cm; otherwise this needs your pixel-to-cm (or similar) factor.']);
+
+    app.schoolJumpFilter = uicheckbox(schoolLeftPanel, 'Position', [12 636 210 22], 'FontSize', 10, ...
+        'Text', 'Filter DLC tracking jumps', 'Value', false);
+    app.schoolJumpThreshField = uieditfield(schoolLeftPanel, 'numeric', 'Position', [228 636 50 22], ...
+        'Value', 0.5, 'Limits', [0.05 5]);
+    uilabel(schoolLeftPanel, 'Position', [282 636 44 22], 'FontSize', 10, 'FontColor', [0.5 0.5 0.5], ...
+        'Text', 'x BL');
+
+    app.schoolRunButton = uibutton(schoolLeftPanel, 'Text', 'Compute School Metrics', ...
+        'Position', [12 596 260 34], 'FontSize', 12, 'BackgroundColor', [0.2 0.55 0.3], ...
+        'FontColor', [1 1 1], 'ButtonPushedFcn', @(~,~) onComputeSchoolMetrics());
+
+    app.schoolResultsArea = uitextarea(schoolLeftPanel, 'Position', [12 380 356 200], ...
+        'Editable', 'off', 'FontSize', 10, 'FontName', 'Courier New', ...
+        'Value', {'(run School Metrics to see results)'});
+
+    schoolRightPanel = uipanel(app.tabSchool, 'Units', 'normalized', 'Position', [0.33 0 0.67 0.93], ...
+        'BorderType', 'line', 'AutoResizeChildren', 'off');
+    app.schoolPolAx = uiaxes(schoolRightPanel, 'Units', 'normalized', 'Position', [0.05 0.55 0.9 0.4]);
+    title(app.schoolPolAx, 'Polarization over time');
+    xlabel(app.schoolPolAx, 'Frame'); ylabel(app.schoolPolAx, 'Polarization (0-1)');
+    app.schoolDistAx = uiaxes(schoolRightPanel, 'Units', 'normalized', 'Position', [0.05 0.05 0.9 0.4]);
+    title(app.schoolDistAx, 'Mean nearest-neighbor distance over time');
+    xlabel(app.schoolDistAx, 'Frame'); ylabel(app.schoolDistAx, 'Distance');
 
     %% ================================================================
     %  CALLBACKS
@@ -515,6 +668,26 @@ function FishKinematicsApp()
     end
 
     function detectFormat(path)
+        % FORMAT A (native DLC multi-animal): probe row 2 col 1 directly —
+        % only this 4-row-header format has the literal 'individuals' label
+        % there. Do this BEFORE readtable: detectImportOptions auto-types
+        % column 1 as numeric (frame indices) and readtable would coerce
+        % the all-text 'individuals' row to NaN.
+        probe = readcell(path, 'Range', 'A2:A2');
+        if ~isempty(probe) && (ischar(probe{1}) || isstring(probe{1})) ...
+                && strcmpi(strtrim(string(probe{1})), 'individuals')
+            app.fmt = 'dlc_multianimal';
+            row2 = readcell(path, 'Range', '2:2');
+            labels = strtrim(string(row2(~cellfun(@(x) isempty(x), row2))));
+            inds = unique(labels(~strcmpi(labels, 'individuals') & labels ~= ""), 'stable');
+            app.fmtLabel.Text = sprintf('Format A: DLC multi-animal  (%d individuals)', numel(inds));
+            app.ptPanel.Visible = 'off';
+            app.axMapPanel.Visible = 'off';
+            app.finRootDrop.Items = {'N/A — DLC multi-animal'};
+            app.finTipDrop.Items  = {'N/A — DLC multi-animal'};
+            return;
+        end
+
         opts = detectImportOptions(path);
         opts.VariableNamingRule = 'preserve';
         opts.DataLines = [1 2];
@@ -808,6 +981,11 @@ function FishKinematicsApp()
                 case 'DLC'
                     app.fp = load_fish_points(csvPath);
 
+                case 'dlc_multianimal'
+                    % Native DeepLabCut multi-animal export (4-row header):
+                    % loads as a struct array, one element per individual.
+                    app.fp = load_fish_points_dlc_multianimal(csvPath);
+
                 case 'named'
                     if numel(app.sel_order) < 3
                         uialert(fig, 'Select at least 3 points (head, middle(s), tail).', 'Points'); return
@@ -861,6 +1039,25 @@ function FishKinematicsApp()
             end
         catch ME; logFullError(ME); uialert(fig, ME.message, 'Load error'); setStatus('Load failed.'); return; end
 
+        if app.chkJumpFilter.Value && ~strcmp(app.fmt, 'curves')
+            setStatus('Filtering DLC tracking jumps...');
+            try
+                app.fp = filter_dlc_jumps(app.fp, app.jumpThreshField.Value);
+            catch ME
+                logFullError(ME);
+                uialert(fig, ME.message, 'Jump filter error');
+                setStatus('Jump filter failed.'); return
+            end
+        end
+
+        % DLC multi-animal: stash the RAW (pre-transform) struct array for
+        % the School Metrics tab — group metrics need one shared coordinate
+        % frame, which transform_fish deliberately breaks up per fish.
+        if strcmp(app.fmt, 'dlc_multianimal')
+            app.school_fp = app.fp;
+            syncSchoolTab();
+        end
+
         setStatus('Remapping axes...');
         try
             app.fp = remap_axes(app.fp);
@@ -885,7 +1082,13 @@ function FishKinematicsApp()
             % will show as N/A in results/CSV until that's added. Call
             % compute_body_extended directly with a roll_pair argument if
             % you need roll for a specific analysis outside the GUI.
-            app.ext = compute_body_extended(app.fp, fps, app.kine, {});
+            flow_bl_s = get_flow_BL_s();
+            if isnan(flow_bl_s)
+                setStatus(['Flow speed set but body length missing — ' ...
+                           'through-water speed skipped (ground speed only).']);
+                flow_bl_s = 0;
+            end
+            app.ext = compute_body_extended(app.fp, fps, app.kine, {}, flow_bl_s);
         catch ME
             % Don't hard-fail the whole run over this — kinematics above
             % already succeeded and is more important to preserve.
@@ -902,6 +1105,11 @@ function FishKinematicsApp()
 
         % Stage all animals from this run for CSV export
         collect_kine_rows();
+
+        % Prompt the School Metrics tab for multi-animal files
+        if strcmp(app.fmt, 'dlc_multianimal')
+            tg.SelectedTab = app.tabSchool;
+        end
     end
 
     % ---- Animal selected ----
@@ -943,6 +1151,8 @@ function FishKinematicsApp()
         L{end+1} = repmat('-',1,34);
         L{end+1} = sprintf('Head TBF:           %.3f Hz',  k.head_TBF);
         L{end+1} = sprintf('Tail TBF:           %.3f Hz',  k.tail_TBF);
+        L{end+1} = sprintf('Spline freq:        %.3f Hz  <-- interpolated midline, compare with TBFs', ...
+                            k.spline_freq_Hz);
         if has_z
             L{end+1} = sprintf('Head TBF (Z):       %.3f Hz',  k.headZ_TBF);
             L{end+1} = sprintf('Tail TBF (Z):       %.3f Hz',  k.tailZ_TBF);
@@ -962,6 +1172,7 @@ function FishKinematicsApp()
         end
         L{end+1} = repmat('-',1,34);
         L{end+1} = sprintf('Wavelength:         %.4f BL',  k.wavelength);
+        L{end+1} = sprintf('Wave speed:         %.4f BL/s (uses tail TBF)', k.wave_speed_BL_s);
         L{end+1} = repmat('-',1,34);
         L{end+1} = sprintf('Max curv (XY):      %.4f @ %.3f', k.maxCurv, k.maxCurvLoc);
         if has_z
@@ -976,6 +1187,24 @@ function FishKinematicsApp()
                                 e.mean_body_angle_deg, e.std_body_angle_deg, e.range_body_angle_deg);
             L{end+1} = sprintf('Speed:              %.4f \xB1 %.4f BL/s (peak %.4f)', ...
                                 e.mean_speed_BL_s, e.std_speed_BL_s, e.peak_speed_BL_s);
+            if isfield(e,'flow_BL_s') && isfinite(e.flow_BL_s) && e.flow_BL_s ~= 0
+                L{end+1} = sprintf('Flow speed:         %.4f BL/s (%s flow)', ...
+                                    abs(e.flow_BL_s), e.flow_orientation);
+                L{end+1} = sprintf('Through-water speed: %.4f \xB1 %.4f BL/s (peak %.4f)', ...
+                                    e.mean_speed_through_water_BL_s, ...
+                                    e.std_speed_through_water_BL_s, ...
+                                    e.peak_speed_through_water_BL_s);
+            end
+            if isfield(e,'tail_amp_pp_BL')
+                L{end+1} = sprintf('Tail amp (p-p):     %.4f BL', e.tail_amp_pp_BL);
+            end
+            if isfield(e,'strouhal')
+                if isnan(e.strouhal)
+                    L{end+1} = 'Strouhal (St):      NaN (needs valid tail_TBF, tail amp, and speed)';
+                else
+                    L{end+1} = sprintf('Strouhal (St):      %.4f', e.strouhal);
+                end
+            end
             if isnan(e.stride_length_BL)
                 L{end+1} = 'Stride length:      NaN (needs valid tail_TBF and speed)';
             else
@@ -1042,6 +1271,10 @@ function FishKinematicsApp()
               'Label', sprintf('min %.1fHz',minFreq));
         xline(app.ax(4), k.head_TBF, 'b--', 'LineWidth',1);
         xline(app.ax(4), k.tail_TBF, 'r--', 'LineWidth',1);
+        if isfield(k,'spline_freq_Hz') && isfinite(k.spline_freq_Hz)
+            xline(app.ax(4), k.spline_freq_Hz, 'g--', 'LineWidth',1, ...
+                  'Label', 'spline');
+        end
         legend(app.ax(4),'Location','northeast','FontSize',9);
         hold(app.ax(4),'off');
     end
@@ -1402,6 +1635,153 @@ function FishKinematicsApp()
         app.finResultsArea.Value = R;
     end
 
+    % ---- School Metrics: populate the tab from an already-loaded struct array ----
+    function syncSchoolTab()
+        fp = app.school_fp;
+        if isempty(fp), return; end
+        app.schoolFileField.Value = strtrim(app.fileField.Value);
+        app.schoolSnoutDrop.Items = fp(1).point_names;
+        app.schoolPeduncleDrop.Items = fp(1).point_names;
+        if numel(fp(1).point_names) >= 2
+            app.schoolSnoutDrop.Value = fp(1).point_names{1};
+            app.schoolPeduncleDrop.Value = fp(1).point_names{end};
+        end
+        if numel(fp) < 2
+            app.schoolLoadedLabel.Text = sprintf(['Loaded, but only %d fish found — School Metrics ' ...
+                'needs multiple fish.'], numel(fp));
+            app.schoolLoadedLabel.FontColor = [0.8 0.3 0.1];
+        else
+            app.schoolLoadedLabel.Text = sprintf('Loaded: %d fish, %d frames, %d points each.', ...
+                numel(fp), size(fp(1).points,1), numel(fp(1).point_names));
+            app.schoolLoadedLabel.FontColor = [0.3 0.6 0.3];
+        end
+    end
+
+    % ---- School Metrics: load a multi-fish CSV ----
+    function onSchoolBrowse()
+        [fname, fpath] = uigetfile({'*.csv','CSV files (*.csv)'}, 'Select multi-fish CSV');
+        if isequal(fname, 0), return; end
+        fullPath = fullfile(fpath, fname);
+        app.schoolFileField.Value = fullPath;
+
+        setStatus('Loading multi-fish file...');
+        try
+            % Auto-detect format: a native DLC multi-animal export has the
+            % literal word "individuals" as the first cell of row 2 — a
+            % totally different 4-row header structure than the older
+            % Fish1_P1_x flattened convention load_fish_points() expects.
+            probe = readcell(fullPath, 'Range', 'A2:A2');
+            if ~isempty(probe) && (ischar(probe{1}) || isstring(probe{1})) ...
+                    && strcmpi(strtrim(string(probe{1})), 'individuals')
+                fp = load_fish_points_dlc_multianimal(fullPath);
+            else
+                fp = load_fish_points(fullPath);
+            end
+        catch ME
+            logFullError(ME);
+            uialert(fig, ME.message, 'Load error');
+            setStatus('Load failed.'); return
+        end
+
+        if numel(fp) < 2
+            app.schoolLoadedLabel.Text = sprintf(['Loaded, but only %d fish found — School Metrics ' ...
+                'needs multiple fish (Fish1_P1_x, Fish2_P1_x, ... columns).'], numel(fp));
+            app.schoolLoadedLabel.FontColor = [0.8 0.3 0.1];
+        else
+            app.schoolLoadedLabel.Text = sprintf('Loaded: %d fish, %d frames, %d points each.', ...
+                numel(fp), size(fp(1).points,1), numel(fp(1).point_names));
+            app.schoolLoadedLabel.FontColor = [0.3 0.6 0.3];
+        end
+
+        app.school_fp = fp;
+        app.schoolSnoutDrop.Items = fp(1).point_names;
+        app.schoolPeduncleDrop.Items = fp(1).point_names;
+        if numel(fp(1).point_names) >= 2
+            app.schoolSnoutDrop.Value = fp(1).point_names{1};
+            app.schoolPeduncleDrop.Value = fp(1).point_names{end};
+        end
+        setStatus(sprintf('Loaded %d fish for School Metrics.', numel(fp)));
+    end
+
+    % ---- School Metrics: compute polarization, angle-to-flow, distance ----
+    function onComputeSchoolMetrics()
+        if isempty(app.school_fp) || numel(app.school_fp) < 2
+            uialert(fig, 'Load a multi-fish file with at least 2 fish first.', 'No data'); return
+        end
+
+        fp = app.school_fp;
+        snoutName    = app.schoolSnoutDrop.Value;
+        peduncleName = app.schoolPeduncleDrop.Value;
+        flowAxisDeg  = app.schoolFlowAxisField.Value;
+        cmPerUnit    = app.schoolCmPerUnitField.Value;
+
+        if app.schoolJumpFilter.Value
+            setStatus('Filtering DLC tracking jumps...');
+            try
+                fp = filter_dlc_jumps(fp, app.schoolJumpThreshField.Value, {snoutName, peduncleName});
+            catch ME
+                logFullError(ME);
+                uialert(fig, ME.message, 'Jump filter error');
+                setStatus('Jump filter failed.'); return
+            end
+        end
+
+        setStatus('Computing school metrics...');
+        try
+            pol  = compute_polarization(fp, snoutName, peduncleName, flowAxisDeg);
+            ang  = compute_angle_to_flow(fp, snoutName, peduncleName, flowAxisDeg);
+            dist = compute_distance_between_individuals(fp, snoutName, cmPerUnit);
+        catch ME
+            logFullError(ME);
+            uialert(fig, ME.message, 'School metrics error');
+            setStatus('School metrics computation failed.'); return
+        end
+
+        % ---- Results text ----
+        R = {};
+        R{end+1} = sprintf('=== SCHOOL METRICS: %s ===', fname_only(app.schoolFileField.Value));
+        R{end+1} = sprintf('%d fish, snout="%s", peduncle="%s", flow axis=%g deg', ...
+                            numel(fp), snoutName, peduncleName, flowAxisDeg);
+        R{end+1} = repmat('-',1,50);
+        R{end+1} = sprintf('POLARIZATION: mean=%.4f  SD=%.4f', pol.mean_polarization, pol.std_polarization);
+        R{end+1} = sprintf('  (frames with >=2 fish present: %d/%d)', ...
+                            sum(pol.n_fish_present>=2), numel(pol.n_fish_present));
+        R{end+1} = '';
+        R{end+1} = 'ANGLE TO FLOW (per fish):';
+        for k = 1:numel(ang)
+            R{end+1} = sprintf('  %-14s mean=%7.2f\xB0  SD=%6.2f\xB0  range=%6.2f\xB0  (%d/%d valid)', ...
+                ang(k).name, ang(k).mean_angle_to_flow_deg, ang(k).std_angle_to_flow_deg, ...
+                ang(k).range_angle_to_flow_deg, ang(k).n_valid_frames, numel(ang(k).heading_deg));
+        end
+        R{end+1} = '';
+        R{end+1} = sprintf('DISTANCE BETWEEN INDIVIDUALS (cm_per_unit=%.4g):', cmPerUnit);
+        R{end+1} = sprintf('  mean nearest-neighbor dist = %.4f', dist.overall_mean_nn_dist);
+        R{end+1} = sprintf('  mean pairwise dist         = %.4f', dist.overall_mean_pairwise_dist);
+        if cmPerUnit == 1.0
+            R{end+1} = '  (cm_per_unit left at default 1.0 -- confirm this is really cm for your data)';
+        end
+        app.schoolResultsArea.Value = R;
+
+        % ---- Plots (lightweight, single line each) ----
+        plot(app.schoolPolAx, pol.polarization, 'LineWidth', 1.2);
+        ylim(app.schoolPolAx, [0 1]);
+        plot(app.schoolDistAx, dist.mean_nn_dist, 'LineWidth', 1.2);
+
+        % ---- Stage CSV rows ----
+        collect_polarization_row(pol, snoutName, peduncleName, flowAxisDeg, numel(fp));
+        for k = 1:numel(ang)
+            collect_angle_to_flow_row(ang(k), flowAxisDeg);
+        end
+        collect_distance_row(dist, snoutName, cmPerUnit, numel(fp));
+
+        setStatus(sprintf('School metrics done. %d row(s) staged — use Export CSV.', numel(app.csv_rows)));
+    end
+
+    function s = fname_only(p)
+        [~, n, e] = fileparts(p);
+        s = [n e];
+    end
+
     % ---- Batch: pick multiple files of the same format ----
     function onSelectBatchFiles()
         [fnames, fpath] = uigetfile({'*.csv','CSV files (*.csv)'}, ...
@@ -1423,6 +1803,8 @@ function FishKinematicsApp()
         fps     = app.fpsField.Value;
         minFreq = app.minFreqField.Value;
         force2D = app.batchForce2D.Value;
+        jumpFilter = app.batchJumpFilter.Value;
+        jumpThreshFrac = app.batchJumpThreshField.Value;
         runFin    = app.batchRunFin.Value;
         runGirdle = app.batchRunGirdle.Value;
         runDuty   = app.batchRunDuty.Value;
@@ -1451,13 +1833,29 @@ function FishKinematicsApp()
         for i = 1:n
             f = app.batchFiles{i};
             [~, fname] = fileparts(f);
+            app.fname_parse = struct('id','','speed',NaN,'bodylength',NaN);   % reset per file
             app.batchProgressLabel.Text = sprintf('%d / %d: %s', i, n, fname);
             drawnow;
 
             try
+                % ---- Guard: DLC multi-animal exports are not single-fish
+                % files — skip with a clear log line rather than failing
+                % inside the named-points loader below. ----
+                probe = readcell(f, 'Range', 'A2:A2');
+                if ~isempty(probe) && (ischar(probe{1}) || isstring(probe{1})) ...
+                        && strcmpi(strtrim(string(probe{1})), 'individuals')
+                    appendBatchLog(sprintf(['[%d/%d] %s: SKIPPED — DLC multi-animal export; ' ...
+                        'use the School Metrics tab for files like this.'], i, n, fname), n);
+                    nFail = nFail + 1;
+                    continue;
+                end
+
                 % ---- Load + transform + kinematics (no plotting) ----
                 fp = load_fish_points_named(f, midlinePts, []);
                 fp = fp(1);
+                if jumpFilter
+                    fp = filter_dlc_jumps(fp, jumpThreshFrac);
+                end
                 % Axis-mapping settings must apply in batch exactly as in
                 % single-run mode (previously skipped here).
                 fp = remap_axes(fp);
@@ -1469,7 +1867,62 @@ function FishKinematicsApp()
                 if ~(bl_ov > 0), bl_ov = []; end
                 fp = transform_fish(fp, bl_ov);
                 kine = compute_kinematics(fp, fps, minFreq);
-                ext  = compute_body_extended(fp, fps, kine, {});
+                % ---- Flow speed: from filename pattern if enabled, else panel ----
+                if app.batchParseFilenames.Value
+                    pat = strtrim(app.batchPatternField.Value);
+                    if isempty(pat)
+                        appendBatchLog(sprintf(['[%d/%d] %s: filename parsing enabled but no pattern ' ...
+                            'typed — using Flow Speed panel values.'], i, n, fname), n);
+                        flow_bl_s = get_flow_BL_s();
+                    elseif ~contains(pat, '{speed}')
+                        appendBatchLog(sprintf(['[%d/%d] %s: pattern has no {speed} token — using ' ...
+                            'Flow Speed panel values.'], i, n, fname), n);
+                        flow_bl_s = get_flow_BL_s();
+                    else
+                        parsed = parse_filename_tokens(fname, pat);
+                        if isempty(parsed)
+                            appendBatchLog(sprintf(['[%d/%d] %s: filename does NOT match pattern ' ...
+                                '"%s" — using Flow Speed panel values.'], i, n, fname, pat), n);
+                            flow_bl_s = get_flow_BL_s();
+                        else
+                            app.fname_parse = parsed;
+                            spd = parsed.speed;
+                            if strcmp(app.flowUnitsDrop.Value, 'BL/s')
+                                flow_bl_s = spd;
+                            else
+                                blv = parsed.bodylength;
+                                if ~(isfinite(blv) && blv > 0)
+                                    blv = app.realBodyLenField.Value;   % no {bodylength} token -> panel
+                                end
+                                if isempty(blv) || ~isfinite(blv) || ~(blv > 0)
+                                    appendBatchLog(sprintf(['[%d/%d] %s: parsed speed %g %s but no body ' ...
+                                        'length to convert (no {bodylength} token and panel body length ' ...
+                                        'unset) — through-water speed skipped.'], ...
+                                        i, n, fname, spd, app.flowUnitsDrop.Value), n);
+                                    flow_bl_s = 0;
+                                else
+                                    flow_bl_s = spd / blv;
+                                    if ~(isfinite(parsed.bodylength) && parsed.bodylength > 0)
+                                        appendBatchLog(sprintf(['[%d/%d] %s: converted %g %s -> %.4g BL/s ' ...
+                                            'using panel body length %g (no {bodylength} token).'], ...
+                                            i, n, fname, spd, app.flowUnitsDrop.Value, flow_bl_s, blv), n);
+                                    end
+                                end
+                            end
+                            if strcmp(app.flowDirDrop.Value, 'With')
+                                flow_bl_s = -abs(flow_bl_s);
+                            end
+                        end
+                    end
+                else
+                    flow_bl_s = get_flow_BL_s();
+                end
+                if isnan(flow_bl_s)
+                    appendBatchLog(sprintf(['[%d/%d] %s: flow speed set but body length missing — ' ...
+                        'through-water speed skipped.'], i, n, fname), n);
+                    flow_bl_s = 0;
+                end
+                ext  = compute_body_extended(fp, fps, kine, {}, flow_bl_s);
 
                 % ---- Populate app state so the EXISTING collectors can be
                 % reused as-is (they read app.fp/app.kine/app.ext/app.fileField/
@@ -1492,8 +1945,23 @@ function FishKinematicsApp()
                 if isfield(fp, 'bl_per_frame') && ~isempty(fp.bl_per_frame)
                     bl_auto = median(fp.bl_per_frame, 'omitnan');
                 end
-                logLine = sprintf('[%d/%d] %s: OK (%d/%d frames valid, BL(auto)=%s csv-units, head_TBF=%s Hz)', ...
-                    i, n, fname, sum(~isnan(fp.X(:,1))), size(fp.X,1), fmt_nan(bl_auto), fmt_nan(kine.head_TBF));
+                n_win = size(fp.X, 1);
+                if isfield(fp, 'n_data_frames') && ~isempty(fp.n_data_frames)
+                    n_win = fp.n_data_frames;   % tracked rows (excludes padding)
+                end
+                logLine = sprintf('[%d/%d] %s: OK (%d/%d frames valid, BL(auto)=%s csv-units, head_TBF=%s Hz, spline=%s Hz)', ...
+                    i, n, fname, sum(~isnan(fp.X(:,1))), n_win, fmt_nan(bl_auto), ...
+                    fmt_nan(kine.head_TBF), fmt_nan(kine.spline_freq_Hz));
+                if isfield(ext,'flow_BL_s') && isfinite(ext.flow_BL_s) && ext.flow_BL_s ~= 0
+                    logLine = [logLine sprintf('  | TW speed=%s BL/s', fmt_nan(ext.mean_speed_through_water_BL_s))]; %#ok<AGROW>
+                end
+                if isfield(ext,'strouhal') && isfinite(ext.strouhal)
+                    logLine = [logLine sprintf('  | St=%.3f', ext.strouhal)]; %#ok<AGROW>
+                end
+                if app.batchParseFilenames.Value && isfinite(app.fname_parse.speed)
+                    logLine = [logLine sprintf('  | fname speed=%g id=%s', ...
+                        app.fname_parse.speed, app.fname_parse.id)]; %#ok<AGROW>
+                end
 
                 % ---- Optional fin / girdle / duty factor ----
                 if runFin
@@ -1521,12 +1989,7 @@ function FishKinematicsApp()
                 nFail = nFail + 1;
             end
 
-            L = app.batchLogArea.Value;
-            if isequal(L, {sprintf('Starting batch: %d files...', n)})
-                L = {};   % clear the placeholder on first real line
-            end
-            L{end+1} = logLine;
-            app.batchLogArea.Value = L;
+            appendBatchLog(logLine, n);
             % Keep the view scrolled to the latest line
             drawnow;
         end
@@ -1534,10 +1997,9 @@ function FishKinematicsApp()
         app.batchProgressLabel.Text = sprintf('Done: %d OK, %d failed (of %d)', nOK, nFail, n);
         setStatus(sprintf('Batch complete: %d OK, %d failed. %d row(s) staged — use Export CSV.', ...
                            nOK, nFail, numel(app.csv_rows)));
-        L = app.batchLogArea.Value;
-        L{end+1} = repmat('=',1,50);
-        L{end+1} = sprintf('DONE: %d OK, %d failed. %d row(s) staged for export.', nOK, nFail, numel(app.csv_rows));
-        app.batchLogArea.Value = L;
+        appendBatchLog(repmat('=',1,50), n);
+        appendBatchLog(sprintf('DONE: %d OK, %d failed. %d row(s) staged for export.', ...
+                                nOK, nFail, numel(app.csv_rows)), n);
     end
 
     % ---- Fin animation in a new figure ----
@@ -1829,6 +2291,16 @@ function FishKinematicsApp()
             r.fps              = fps_val;
             r.n_frames         = size(fp.points, 1);
 
+            % ---- Filename-parsed values (batch; empty/NaN in single-file mode) ----
+            r.filename_id         = '';
+            r.filename_speed      = NaN;
+            r.filename_bodylength = NaN;
+            if isfield(app,'fname_parse') && ~isempty(app.fname_parse)
+                r.filename_id         = app.fname_parse.id;
+                r.filename_speed      = app.fname_parse.speed;
+                r.filename_bodylength = app.fname_parse.bodylength;
+            end
+
             % ---- Point identity ----
             if isfield(fp,'point_names') && ~isempty(fp.point_names)
                 r.head_point = fp.point_names{1};
@@ -1843,6 +2315,10 @@ function FishKinematicsApp()
             % ---- Beat frequency ----
             r.head_TBF_Hz      = k.head_TBF;
             r.tail_TBF_Hz      = k.tail_TBF;
+            r.spline_freq_Hz   = NaN;
+            if isfield(k, 'spline_freq_Hz')
+                r.spline_freq_Hz = k.spline_freq_Hz;
+            end
             r.head_TBF_Z_Hz    = NaN;
             r.tail_TBF_Z_Hz    = NaN;
             if has_z
@@ -1877,6 +2353,7 @@ function FishKinematicsApp()
 
             % ---- Propulsive wave ----
             r.wavelength_BL    = k.wavelength;
+            r.wave_speed_BL_s  = k.wave_speed_BL_s;
 
             % ---- Curvature ----
             r.max_curv_XY      = k.maxCurv;
@@ -1895,6 +2372,10 @@ function FishKinematicsApp()
             r.head_pitch_mean_deg  = NaN; r.head_pitch_std_deg   = NaN; r.head_pitch_range_deg = NaN;
             r.roll_mean_deg        = NaN; r.roll_std_deg         = NaN; r.roll_range_deg       = NaN;
             r.roll_available       = 'false';
+            r.flow_BL_s            = NaN; r.flow_orientation         = 'none';
+            r.speed_through_water_mean_BL_s = NaN; r.speed_through_water_std_BL_s = NaN;
+            r.speed_through_water_peak_BL_s = NaN;
+            r.tail_amp_pp_BL       = NaN; r.strouhal                  = NaN;
             if ~isempty(app.ext) && fi <= numel(app.ext)
                 e = app.ext(fi);
                 r.body_angle_mean_deg = e.mean_body_angle_deg;
@@ -1904,6 +2385,15 @@ function FishKinematicsApp()
                 r.speed_std_BL_s      = e.std_speed_BL_s;
                 r.speed_peak_BL_s     = e.peak_speed_BL_s;
                 r.stride_length_BL    = e.stride_length_BL;
+                if isfield(e, 'flow_BL_s')
+                    r.flow_BL_s = e.flow_BL_s;
+                    r.flow_orientation = e.flow_orientation;
+                    r.speed_through_water_mean_BL_s = e.mean_speed_through_water_BL_s;
+                    r.speed_through_water_std_BL_s  = e.std_speed_through_water_BL_s;
+                    r.speed_through_water_peak_BL_s = e.peak_speed_through_water_BL_s;
+                    r.tail_amp_pp_BL = e.tail_amp_pp_BL;
+                    r.strouhal       = e.strouhal;
+                end
                 if has_z
                     r.head_pitch_mean_deg  = e.mean_head_pitch_deg;
                     r.head_pitch_std_deg   = e.std_head_pitch_deg;
@@ -1947,6 +2437,7 @@ function FishKinematicsApp()
 
         % Fill kinematics columns with NaN so row merges cleanly
         r.head_TBF_Hz     = NaN; r.tail_TBF_Hz     = NaN;
+        r.spline_freq_Hz  = NaN;
         r.head_TBF_Z_Hz   = NaN; r.tail_TBF_Z_Hz   = NaN;
         r.head_amp_Y_BL   = NaN; r.tail_amp_Y_BL   = NaN;
         r.head_tail_amp_ratio = NaN;
@@ -1956,6 +2447,7 @@ function FishKinematicsApp()
         r.min_amp_Z_BL    = NaN; r.min_amp_Z_loc_BL = NaN;
         r.max_amp_Z_BL    = NaN; r.max_amp_Z_loc_BL = NaN;
         r.wavelength_BL   = NaN;
+        r.wave_speed_BL_s = NaN;
         r.max_curv_XY     = NaN; r.max_curv_XY_loc  = NaN;
         r.max_curv_3D     = NaN; r.max_curv_3D_loc  = NaN;
 
@@ -2054,6 +2546,78 @@ function FishKinematicsApp()
         r.stance_is_estimate_not_measured = 'TRUE';   % explicit flag — never confuse with real contact-time data (string, not logical — write_csv_rows only recognizes char/string/numeric)
 
         r.row_type = 'stance_swing_estimate';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_polarization_row(pol, snoutName, peduncleName, flowAxisDeg, nFish)
+    % One summary row per school-metrics run.
+        if nargin < 1 || isempty(pol), return; end
+        timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+
+        r = struct();
+        r.timestamp    = timestamp;
+        r.source_file  = strtrim(app.schoolFileField.Value);
+        r.data_format  = 'school_multi_fish';
+        r.n_fish       = nFish;
+        r.snout_point  = snoutName;
+        r.peduncle_point = peduncleName;
+        r.flow_axis_deg = flowAxisDeg;
+
+        r.mean_polarization = pol.mean_polarization;
+        r.std_polarization  = pol.std_polarization;
+        r.n_frames_ge2_fish = sum(pol.n_fish_present >= 2);
+        r.n_frames_total    = numel(pol.n_fish_present);
+
+        r.row_type = 'polarization';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_angle_to_flow_row(ang, flowAxisDeg)
+    % One row PER FISH (angle-to-flow is a per-fish, not per-file, metric).
+        if nargin < 1 || isempty(ang), return; end
+        timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+
+        r = struct();
+        r.timestamp     = timestamp;
+        r.source_file   = strtrim(app.schoolFileField.Value);
+        r.data_format   = 'school_multi_fish';
+        r.animal        = ang.name;
+        r.flow_axis_deg = flowAxisDeg;
+
+        r.mean_angle_to_flow_deg  = ang.mean_angle_to_flow_deg;
+        r.std_angle_to_flow_deg   = ang.std_angle_to_flow_deg;
+        r.range_angle_to_flow_deg = ang.range_angle_to_flow_deg;
+        r.n_valid_frames          = ang.n_valid_frames;
+        r.n_frames_total          = numel(ang.heading_deg);
+
+        r.row_type = 'angle_to_flow';
+
+        app.csv_rows{end+1} = r;
+        updateCSVLabel();
+    end
+
+    function collect_distance_row(dist, snoutName, cmPerUnit, nFish)
+    % One summary row per school-metrics run.
+        if nargin < 1 || isempty(dist), return; end
+        timestamp = datestr(now, 'yyyy-mm-dd HH:MM:SS'); %#ok<TNOW1,DATST>
+
+        r = struct();
+        r.timestamp   = timestamp;
+        r.source_file = strtrim(app.schoolFileField.Value);
+        r.data_format = 'school_multi_fish';
+        r.n_fish      = nFish;
+        r.snout_point = snoutName;
+        r.cm_per_unit = cmPerUnit;
+        r.cm_per_unit_is_default = mat2str(cmPerUnit == 1.0);   % flag to check before trusting units as real cm
+
+        r.mean_nearest_neighbor_dist = dist.overall_mean_nn_dist;
+        r.mean_pairwise_dist         = dist.overall_mean_pairwise_dist;
+
+        r.row_type = 'distance_between_individuals';
 
         app.csv_rows{end+1} = r;
         updateCSVLabel();
@@ -2232,6 +2796,82 @@ function FishKinematicsApp()
     % compute_fin_kinematics, etc. — NaN should always read as NaN, never
     % be silently formatted to look like a real value).
         if isnan(v), s = 'NaN'; else, s = sprintf('%.4f', v); end
+    end
+
+    function flow_bl_s = get_flow_BL_s()
+    % Signed flow speed in BL/s from the FLOW SPEED panel inputs:
+    %   + = flow opposes the fish (Against) -> through-water = ground + flow
+    %   - = flow assists the fish (With)    -> through-water = |ground - |flow||
+    % Returns 0 when flow speed is 0/empty (no flow correction), NaN when
+    % flow is set but can't be converted (real-unit flow without a body
+    % length). The unit labels only document intent: the conversion is the
+    % ratio flow/BL in matching real units, so the actual unit choice
+    % cancels as long as both use the same one.
+        flow_bl_s = 0;
+        fv = app.flowSpeedField.Value;
+        if isempty(fv) || ~isfinite(fv) || ~(fv > 0)
+            return;
+        end
+        units = app.flowUnitsDrop.Value;
+        if strcmp(units, 'BL/s')
+            flow_bl_s = fv;
+        else
+            blv = app.realBodyLenField.Value;
+            if isempty(blv) || ~isfinite(blv) || ~(blv > 0)
+                flow_bl_s = NaN;   % can't convert real-unit flow without a body length
+                return;
+            end
+            flow_bl_s = fv / blv;
+        end
+        if strcmp(app.flowDirDrop.Value, 'With')
+            flow_bl_s = -flow_bl_s;
+        end
+    end
+
+    function parsed = parse_filename_tokens(fname, pat)
+    % Match a filename (WITHOUT the .csv extension) against the user's
+    % naming pattern and pull out the {speed}/{bodylength}/{id} values.
+    %   pat    e.g. 'WSBS_*_{speed}BL*_{id}xyzpts'  (* = any text, possibly
+    %          empty — so BL* absorbs an optional ".1" trial tag before _)
+    %   parsed struct with .id (char), .speed, .bodylength (numeric; NaN
+    %          where no token of that type exists) — or [] if the name does
+    %          not match the pattern.
+        parsed = [];
+        pat = strtrim(pat);
+        if isempty(pat) || isempty(fname), return; end
+
+        tok_order = regexp(pat, '\{speed\}|\{bodylength\}|\{id\}', 'match');
+        if isempty(tok_order), return; end   % nothing to extract
+
+        esc = regexptranslate('escape', pat);
+        esc = strrep(esc, '\*', '.*?');
+        esc = strrep(esc, '\{speed\}', '([0-9]*\.?[0-9]+)');
+        esc = strrep(esc, '\{bodylength\}', '([0-9]*\.?[0-9]+)');
+        esc = strrep(esc, '\{id\}', '(.*?)');
+
+        m = regexp(fname, ['^' esc '$'], 'tokens', 'once');
+        if isempty(m), return; end
+
+        parsed = struct('id','','speed',NaN,'bodylength',NaN);
+        for t = 1:numel(tok_order)
+            switch tok_order{t}
+                case '{speed}',      parsed.speed      = str2double(m{t});
+                case '{bodylength}', parsed.bodylength = str2double(m{t});
+                case '{id}',         parsed.id         = m{t};
+            end
+        end
+    end
+
+    function appendBatchLog(line, n)
+    % Append one line to the batch log, clearing the "Starting batch" /
+    % "(no batch run yet)" placeholder on the first real line.
+        L = app.batchLogArea.Value;
+        if isequal(L, {'(no batch run yet)'}) || ...
+           (nargin >= 2 && isequal(L, {sprintf('Starting batch: %d files...', n)}))
+            L = {};
+        end
+        L{end+1} = line;
+        app.batchLogArea.Value = L;
     end
 
     function logFullError(ME)

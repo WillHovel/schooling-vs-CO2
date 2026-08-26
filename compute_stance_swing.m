@@ -71,7 +71,10 @@ function stance = compute_stance_swing(fin, varargin)
     speed_known = tip_speed;
     speed_known(~known) = NaN;
 
-    pct_valid_consecutive = 100 * sum(known) / nFrames;
+    % Tracked window: frames where the fin was tracked at all — excludes
+    % leading/trailing all-empty padding rows common in exported CSVs.
+    n_fin_tracked = sum(fin.valid);
+    pct_valid_consecutive = 100 * sum(known) / max(n_fin_tracked, 1);
     if pct_valid_consecutive < 70
         warning(['compute_stance_swing: only %.1f%% of frames have usable ' ...
                  'frame-to-frame tip speed (rest are tracking gaps). Stance/swing ' ...

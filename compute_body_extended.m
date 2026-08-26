@@ -1,9 +1,10 @@
-function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
+function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_s)
 % COMPUTE_BODY_EXTENDED  Additional whole-body kinematics not covered by
 %                        compute_kinematics.m: body angle, speed, stride
 %                        length, head elevation, and roll (if available).
 %
 %   ext = compute_body_extended(fish_points, fps, kine, roll_pair)
+%   ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_s)
 %
 %   INPUTS
 %     fish_points - struct from transform_fish() — must have .points
@@ -12,7 +13,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
 %     fps         - frames per second.
 %     kine        - output of compute_kinematics(fish_points, fps, min_freq)
 %                   for the SAME fish — used to get tail_TBF for stride
-%                   length. Pass [] to skip stride length.
+%                   length and Strouhal. Pass [] to skip stride length.
 %     roll_pair   - OPTIONAL 1x2 cell of point_names, e.g.
 %                   {'LPectBase','RPectBase'}, giving a left/right pair
 %                   used to estimate roll. Roll cannot be computed from a
@@ -20,6 +21,15 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
 %                   points to tell which way "up" tilts. If omitted or
 %                   the named points aren't found, .roll_deg is NaN and
 %                   .roll_available is false.
+%     flow_BL_s   - OPTIONAL tank/flume flow speed in BL/s, SIGNED:
+%                     + = flow opposes the fish (upstream station-holding;
+%                         through-water speed = ground speed + flow)
+%                     - = flow assists the fish (downstream;
+%                         through-water speed = |ground speed - |flow||)
+%                    0 or omitted = no flow correction (ground speed only).
+%                   This must be converted to BL/s by the CALLER (flow in
+%                   cm/s divided by body length in cm, etc.) — this
+%                   function works entirely in BL units.
 %
 %   OUTPUT  ext — struct (one per animal) with fields:
 %
@@ -43,6 +53,22 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
 %                            needing absolute camera calibration).
 %     .mean_speed_BL_s / .std_speed_BL_s / .peak_speed_BL_s
 %
+%   --- Through-water speed & Strouhal (needs flow_BL_s input) ---
+%     .flow_BL_s             the signed flow speed used (0 = none)
+%     .flow_orientation      'against' / 'with' / 'none'
+%     .speed_through_water_BL_s   [nFrames x 1] ground speed corrected for
+%                                  flow (see flow_BL_s sign convention above)
+%     .mean_speed_through_water_BL_s / .std_... / .peak_...
+%     .tail_amp_pp_BL        peak-to-peak trailing-edge (tail point) lateral
+%                             excursion in BL = 2*sqrt(2)*std(tail Y) — the
+%                             standard sinusoid amplitude estimator
+%     .strouhal               St = tail_TBF * tail_amp_pp_BL / U, where
+%                             U = mean through-water speed if flow is set,
+%                             otherwise mean ground speed. Dimensionless.
+%                             (Triantafyllou convention: peak-to-peak
+%                             trailing-edge amplitude.) NaN when tail_TBF,
+%                             amplitude, or U is missing/zero.
+%
 %   --- Stride length (needs kine for tail_TBF) ---
 %     .stride_length_BL      mean forward distance traveled per tail-beat
 %                             cycle = mean_speed_BL_s / tail_TBF (BL/cycle)
@@ -63,6 +89,9 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
 %     .roll_available         logical
 %     .roll_deg                [nFrames x 1]  or NaN(nFrames,1) if unavailable
 %     .mean_roll_deg / .std_roll_deg / .range_roll_deg
+
+    if nargin < 5 || isempty(flow_BL_s), flow_BL_s = 0; end
+    if ~isscalar(flow_BL_s), flow_BL_s = flow_BL_s(1); end
 
     nFish = numel(fish_points);
     ext(nFish) = struct();
@@ -188,6 +217,35 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
         end
 
         % ================================================================
+        % 2b. THROUGH-WATER SPEED — ground speed corrected by a known
+        %     tank/flume flow. Sign convention (documented above):
+        %       flow > 0  (against fish):  U_tw = U_ground + flow
+        %       flow < 0  (with fish):     U_tw = |U_ground - |flow||
+        %     ground speed here is a MAGNITUDE (centroid distance per
+        %     second), so this assumes the fish's path is aligned with the
+        %     flow axis — the standard flume station-holding assumption.
+        % ================================================================
+        if isfinite(flow_BL_s) && flow_BL_s > 0
+            speed_tw_BL_s = speed_BL_s + flow_BL_s;
+            flow_orientation = 'against';
+        elseif isfinite(flow_BL_s) && flow_BL_s < 0
+            speed_tw_BL_s = abs(speed_BL_s + flow_BL_s);
+            flow_orientation = 'with';
+        else
+            speed_tw_BL_s = speed_BL_s;
+            flow_orientation = 'none';
+        end
+
+        valid_tw = ~isnan(speed_tw_BL_s);
+        if any(valid_tw)
+            mean_tw = mean(speed_tw_BL_s(valid_tw));
+            std_tw  = std(speed_tw_BL_s(valid_tw));
+            peak_tw = max(speed_tw_BL_s(valid_tw));
+        else
+            mean_tw = NaN; std_tw = NaN; peak_tw = NaN;
+        end
+
+        % ================================================================
         % 3. STRIDE LENGTH — mean forward distance traveled per tail-beat
         %    cycle. Needs tail_TBF from compute_kinematics.
         % ================================================================
@@ -195,6 +253,83 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
         if ~isempty(kine) && isfield(kine(fi), 'tail_TBF') && ~isnan(kine(fi).tail_TBF) ...
                 && kine(fi).tail_TBF > 0 && ~isnan(mean_speed)
             stride_length_BL = mean_speed / kine(fi).tail_TBF;
+        end
+
+        % ================================================================
+        % 3b. STROUHAL NUMBER — St = tail_TBF * A_pp / U
+        %     A_pp = peak-to-peak trailing-edge (tail point) lateral
+        %     excursion in BL. For a sinusoid, amplitude A = sqrt(2)*std,
+        %     so A_pp = 2*sqrt(2)*std(tail Y). U = mean through-water
+        %     speed when flow is set (the physically correct reference
+        %     velocity in a flume), otherwise mean ground speed.
+        % ================================================================
+        tail_amp_pp_BL = NaN;
+        if isfield(fish_points(fi),'Y') && ~isempty(fish_points(fi).Y)
+            yt = fish_points(fi).Y(:, end);
+            if ~pre_xformed
+                % The per-frame body-axis line fit oscillates at the beat
+                % frequency because the traveling wave biases it, which
+                % inflates the tail's apparent excursion (~50% on clean
+                % synthetic waves). Fix: measure the tail's PERPENDICULAR
+                % distance from a SMOOTHED version of the fitted axis
+                % (line orientation + middle-point centroid averaged over
+                % ~1.5 beat periods). The orientation is smoothed as the
+                % complex vector exp(i*2*alpha) — invariant to the line's
+                % +/-180 deg ambiguity — so it also survives the large
+                % heading swings / mirror flips of turning or walking
+                % fish. Validated: synthetic raw A_pp=0.153 vs true 0.100
+                % -> 0.104; robust to slow drift and to walking-shark
+                % heading swings of +/-69 deg.
+                tp = fish_points(fi).transform_params;
+                if numel(tp) == nFrames && all(isfield(tp, {'theta','bl'}))
+                    bl_pf = [tp.bl]';
+                    alpha = 2*pi - [tp.theta]';   % atan(b): raw fit-line angle
+                    z = exp(2i * alpha);          % direction, +/-180-invariant
+                    tbf = NaN;
+                    if ~isempty(kine) && isfield(kine(fi),'tail_TBF')
+                        tbf = kine(fi).tail_TBF;
+                    end
+                    if isfinite(tbf) && tbf > 0
+                        win = round(1.5 * fps / tbf);
+                    else
+                        win = 2 * fps;   % no beat detected — 2 s window
+                    end
+                    win = max(win, 5);
+                    win = min(win, nFrames);
+                    if mod(win,2) == 0, win = win + 1; end
+                    z_s   = movmean(z, win, 'omitnan');
+                    alpha_s = 0.5 * angle(z_s);
+                    x_mid_all = squeeze(mean(pts(:, fit_idx, 1), 2, 'omitnan'));
+                    y_mid_all = squeeze(mean(pts(:, fit_idx, 2), 2, 'omitnan'));
+                    xb_s = movmean(x_mid_all, win, 'omitnan');
+                    yb_s = movmean(y_mid_all, win, 'omitnan');
+                    for f = 1:nFrames
+                        if isnan(yt(f)) || ~(bl_pf(f) > 0), continue; end
+                        x_t = pts(f, nPoints, 1);
+                        y_t = pts(f, nPoints, 2);
+                        if isnan(x_t) || isnan(y_t) || isnan(alpha_s(f)) ...
+                                || isnan(xb_s(f)) || isnan(yb_s(f)), continue; end
+                        % perpendicular distance from the smoothed axis, in BL
+                        yt(f) = ((y_t - yb_s(f))*cos(alpha_s(f)) - (x_t - xb_s(f))*sin(alpha_s(f))) / bl_pf(f);
+                    end
+                end
+            end
+            good = isfinite(yt);
+            if sum(good) >= 3
+                tg = (1:nFrames)';
+                yt(good) = detrend(yt(good), 'linear', 'SamplePoints', tg(good));
+            end
+            yt = yt(isfinite(yt));
+            if numel(yt) >= 3
+                tail_amp_pp_BL = 2 * sqrt(2) * std(yt);
+            end
+        end
+
+        strouhal = NaN;
+        if ~isempty(kine) && isfield(kine(fi), 'tail_TBF') && ~isnan(kine(fi).tail_TBF) ...
+                && kine(fi).tail_TBF > 0 && ~isnan(tail_amp_pp_BL) && tail_amp_pp_BL > 0 ...
+                && isfinite(mean_tw) && mean_tw > 0
+            strouhal = kine(fi).tail_TBF * tail_amp_pp_BL / mean_tw;
         end
 
         % ================================================================
@@ -274,6 +409,15 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
 
         ext(fi).stride_length_BL = stride_length_BL;
 
+        ext(fi).flow_BL_s         = flow_BL_s;
+        ext(fi).flow_orientation  = flow_orientation;
+        ext(fi).speed_through_water_BL_s      = speed_tw_BL_s;
+        ext(fi).mean_speed_through_water_BL_s = mean_tw;
+        ext(fi).std_speed_through_water_BL_s  = std_tw;
+        ext(fi).peak_speed_through_water_BL_s = peak_tw;
+        ext(fi).tail_amp_pp_BL    = tail_amp_pp_BL;
+        ext(fi).strouhal          = strouhal;
+
         ext(fi).head_pitch_deg       = head_pitch_deg;
         ext(fi).mean_head_pitch_deg  = mean_head_pitch;
         ext(fi).std_head_pitch_deg   = std_head_pitch;
@@ -291,6 +435,14 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair)
                 fish_points(fi).name, mean_body_angle, std_body_angle, ...
                 mean_speed, std_speed, fmt_stride(stride_length_BL), ...
                 mean_head_pitch, fmt_roll(roll_available, mean_roll));
+        if isfinite(flow_BL_s) && flow_BL_s ~= 0
+            fprintf('  flow=%.3f BL/s (%s) -> through-water speed=%.3f\xB1%.3f BL/s\n', ...
+                    flow_BL_s, flow_orientation, mean_tw, std_tw);
+        end
+        if isfinite(strouhal)
+            fprintf('  tail amp (p-p)=%.4f BL  Strouhal=%.3f (U=%s)\n', ...
+                    tail_amp_pp_BL, strouhal, flow_orientation);
+        end
     end
 end
 
