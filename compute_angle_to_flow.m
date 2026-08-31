@@ -4,9 +4,9 @@ function ang = compute_angle_to_flow(fish_points, snoutName, peduncleName, flowA
 %   ang = compute_angle_to_flow(fish_points, snoutName, peduncleName)
 %   ang = compute_angle_to_flow(fish_points, snoutName, peduncleName, flowAxisDeg)
 %
-%   Works for one fish or a struct array of several — each is handled
+%   Works for one fish or a struct array of several, each is handled
 %   independently (this is NOT a group metric; see compute_polarization.m
-%   for that). Pass the RAW (untransformed) fish_points — same reasoning
+%   for that). Pass the RAW (untransformed) fish_points, same reasoning
 %   as compute_polarization.m: transform_fish's per-fish normalized frame
 %   would distort the angle relative to a shared flow direction.
 %
@@ -20,18 +20,18 @@ function ang = compute_angle_to_flow(fish_points, snoutName, peduncleName, flowA
 %                     "aligned with flow" in the raw/camera coordinate
 %                     frame, e.g. 0 for left-to-right flow. Default 0.
 %
-%   OUTPUT  ang — struct ARRAY (one per fish):
+%   OUTPUT  ang: struct ARRAY (one per fish):
 %     .name                  fish name (from fish_points(k).name if present)
 %     .heading_deg           [nFrames x 1] raw heading angle (peduncle->snout)
 %     .angle_to_flow_deg     [nFrames x 1] heading re-centered so 0 = aligned
 %                            with flow, wrapped to (-180, 180]. Positive/
 %                            negative sign follows standard atan2d
-%                            convention (counter-clockwise positive) —
+%                            convention (counter-clockwise positive),
 %                            check against your own footage's orientation
 %                            if up/down or left/right sign matters for
 %                            your analysis.
 %     .mean_angle_to_flow_deg / .std_angle_to_flow_deg / .range_angle_to_flow_deg
-%         CIRCULAR statistics — the mean is the direction of the average
+%         CIRCULAR statistics: the mean is the direction of the average
 %         unit heading vector (atan2d of the summed sines/cosines) and the
 %         std is the circular standard deviation sqrt(-2*ln R) in deg,
 %         where R is the mean resultant length. A plain arithmetic mean/std
@@ -57,7 +57,7 @@ function ang = compute_angle_to_flow(fish_points, snoutName, peduncleName, flowA
         heading_deg = NaN(nFrames, 1);
 
         if isempty(iSnout) || isempty(iPed)
-            warning(['compute_angle_to_flow: fish %d ("%s") is missing "%s" and/or "%s" — ' ...
+            warning(['compute_angle_to_flow: fish %d ("%s") is missing "%s" and/or "%s": ' ...
                      'all frames NaN for this fish.'], k, safe_name(fish_points(k)), snoutName, peduncleName);
         else
             snout_xy = squeeze(fish_points(k).points(:, iSnout, 1:2));

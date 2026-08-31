@@ -5,7 +5,7 @@ function pol = compute_polarization(fish_points, snoutName, peduncleName, flowAx
 %   pol = compute_polarization(fish_points, snoutName, peduncleName)
 %   pol = compute_polarization(fish_points, snoutName, peduncleName, flowAxisDeg)
 %
-%   IMPORTANT: pass the RAW (untransformed) fish_points struct array —
+%   IMPORTANT: pass the RAW (untransformed) fish_points struct array,
 %   i.e. straight from load_fish_points()/load_fish_points_named(),
 %   BEFORE transform_fish(). transform_fish deliberately puts each fish
 %   into its OWN private body-length-normalized coordinate frame, which
@@ -16,7 +16,7 @@ function pol = compute_polarization(fish_points, snoutName, peduncleName, flowAx
 %   INPUTS
 %     fish_points   - struct ARRAY, one element per fish (as returned by
 %                     load_fish_points() for multi-animal Format A, or
-%                     assembled by hand from multiple single-fish loads —
+%                     assembled by hand from multiple single-fish loads,
 %                     see note below). Each element needs .points
 %                     [nFrames x nPoints x nDims>=2] and .point_names.
 %     snoutName     - point name (or numbered label) for the snout landmark
@@ -26,10 +26,10 @@ function pol = compute_polarization(fish_points, snoutName, peduncleName, flowAx
 %                     flow in raw image/camera coordinates. Default 0.
 %                     This only affects .heading_to_flow_deg (per-fish);
 %                     polarization itself doesn't depend on flow
-%                     direction — it measures alignment of fish WITH
+%                     direction; it measures alignment of fish WITH
 %                     EACH OTHER, regardless of which way that is.
 %
-%   OUTPUT  pol — struct:
+%   OUTPUT  pol: struct:
 %     .heading_deg          [nFrames x nFish] each fish's heading angle
 %                            (peduncle -> snout vector), degrees, in the
 %                            raw/world coordinate frame
@@ -43,11 +43,11 @@ function pol = compute_polarization(fish_points, snoutName, peduncleName, flowAx
 %                            and peduncle tracked that frame
 %     .mean_polarization / .std_polarization   summary over valid frames
 %
-%   METHOD: standard circular-statistics polarization —
+%   METHOD: standard circular-statistics polarization:
 %     polarization(f) = | mean_k( exp(i * heading_k(f)) ) |
 %   i.e. the length of the average unit heading vector across all fish
 %   present in frame f. This is invariant to the OVERALL direction
-%   they're all facing — it only measures how well-aligned they are WITH
+%   they're all facing; it only measures how well-aligned they are WITH
 %   EACH OTHER.
 %
 %   NOTE ON MULTI-FISH DATA ASSEMBLY: if your fish are in separate CSVs
@@ -63,7 +63,7 @@ function pol = compute_polarization(fish_points, snoutName, peduncleName, flowAx
 
     nFish = numel(fish_points);
     if nFish < 2
-        warning(['compute_polarization: only %d fish provided — polarization is a ' ...
+        warning(['compute_polarization: only %d fish provided: polarization is a ' ...
                  'group-alignment metric and needs at least 2 to mean anything.'], nFish);
     end
 
@@ -75,14 +75,14 @@ function pol = compute_polarization(fish_points, snoutName, peduncleName, flowAx
         iSnout = find(strcmpi(pn, snoutName), 1);
         iPed   = find(strcmpi(pn, peduncleName), 1);
         if isempty(iSnout) || isempty(iPed)
-            warning(['compute_polarization: fish %d ("%s") is missing "%s" and/or "%s" — ' ...
+            warning(['compute_polarization: fish %d ("%s") is missing "%s" and/or "%s": ' ...
                      'excluded from polarization for all frames.'], ...
                      k, fish_points(k).name, snoutName, peduncleName);
             continue;
         end
         if size(fish_points(k).points,1) ~= nFrames
             warning(['compute_polarization: fish %d ("%s") has %d frames, expected %d ' ...
-                     '(from fish 1) — frame indices may not correspond to the same real ' ...
+                     '(from fish 1), frame indices may not correspond to the same real ' ...
                      'time across fish. Proceeding, but verify your inputs are synchronized.'], ...
                      k, fish_points(k).name, size(fish_points(k).points,1), nFrames);
         end

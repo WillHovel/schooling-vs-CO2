@@ -85,7 +85,7 @@ function test_loaders()
     check(isequal(fpB0.point_names, {'snout','tail'}), 'B: no-selection lists names');
 
     % all-'NA' column: must come out as clean NaN (imported as text or
-    % numeric depending on readtable's missing-value handling — either way
+    % numeric depending on readtable's missing-value handling, either way
     % the column must not crash and must be all-NaN)
     rowsB3 = [ {'snout_X','snout_Y','occl_X','occl_Y'}
                num2cell([(1:4)', (1:4)'*2, nan(4,1), nan(4,1)]) ];

@@ -1,13 +1,13 @@
 function stance = compute_stance_swing(fin, varargin)
 % COMPUTE_STANCE_SWING  Estimate contact time / duty factor from fin-tip
-%                       velocity — for WALKING/PUNTING gaits (e.g.
+%                       velocity, for WALKING/PUNTING gaits (e.g.
 %                       Polypterus, epaulette shark "punting"), not
 %                       free-swimming sculling.
 %
 %   stance = compute_stance_swing(fin)
 %   stance = compute_stance_swing(fin, 'Name', Value, ...)
 %
-%   METHOD (IMPORTANT — READ BEFORE TRUSTING THIS)
+%   METHOD (IMPORTANT: READ BEFORE TRUSTING THIS)
 %   There's no force/pressure sensor here, so "contact" is a KINEMATIC
 %   PROXY: a frame is classified as STANCE (fin planted) when the tip's
 %   speed drops below a threshold fraction of its own 95th-percentile
@@ -16,7 +16,7 @@ function stance = compute_stance_swing(fin, varargin)
 %   measurement as a true contact sensor / pressure-mat duty factor. If
 %   you have real contact-time data (as Shoval mentioned), TREAT THAT AS
 %   GROUND TRUTH and use this as a secondary/exploratory check, not a
-%   replacement — the two can disagree, especially if the fin doesn't
+%   replacement; the two can disagree, especially if the fin doesn't
 %   fully stop during stance (common in a slow punt vs a hard plant).
 %
 %   INPUTS
@@ -34,7 +34,7 @@ function stance = compute_stance_swing(fin, varargin)
 %                            splitting a bout. Longer gaps end the bout
 %                            and are excluded. Default 2.
 %
-%   OUTPUT  stance — struct:
+%   OUTPUT  stance: struct:
 %     .is_stance          [nFrames x 1] logical (NaN frames -> false)
 %     .threshold_used      the actual speed threshold (same units as tip_speed)
 %     .stance_bouts_frames  [nBouts x 2] start/end frame indices
@@ -43,7 +43,7 @@ function stance = compute_stance_swing(fin, varargin)
 %     .mean_swing_time_s    mean swing bout duration (s)
 %     .duty_factor          mean_contact_time / (mean_contact_time + mean_swing_time)
 %     .n_cycles             number of complete stance->swing->stance cycles found
-%     .pct_valid_consecutive  % of frames with usable frame-to-frame speed —
+%     .pct_valid_consecutive  % of frames with usable frame-to-frame speed:
 %                              LOW VALUES HERE (<70%) MEAN THIS ESTIMATE IS
 %                              LIKELY UNRELIABLE due to tracking gaps
 %                              fragmenting real bouts. Check this before
@@ -63,7 +63,7 @@ function stance = compute_stance_swing(fin, varargin)
     nFrames   = numel(tip_speed);
 
     % tip_speed is 0 (not NaN) for frames where step_dist couldn't be
-    % computed (see compute_fin_kinematics.m — step_dist initialized to
+    % computed (see compute_fin_kinematics.m, step_dist initialized to
     % zeros, only filled where BOTH this and prior frame are valid).
     % Treat those zero-by-construction frames as "unknown", not "stance",
     % or every tracking gap would masquerade as a plant.
@@ -71,14 +71,14 @@ function stance = compute_stance_swing(fin, varargin)
     speed_known = tip_speed;
     speed_known(~known) = NaN;
 
-    % Tracked window: frames where the fin was tracked at all — excludes
+    % Tracked window: frames where the fin was tracked at all, excludes
     % leading/trailing all-empty padding rows common in exported CSVs.
     n_fin_tracked = sum(fin.valid);
     pct_valid_consecutive = 100 * sum(known) / max(n_fin_tracked, 1);
     if pct_valid_consecutive < 70
         warning(['compute_stance_swing: only %.1f%% of frames have usable ' ...
                  'frame-to-frame tip speed (rest are tracking gaps). Stance/swing ' ...
-                 'bouts are likely fragmented by missing data, not real transitions — ' ...
+                 'bouts are likely fragmented by missing data, not real transitions: ' ...
                  'treat duty_factor as a rough estimate, not a precise measurement, ' ...
                  'until tracking coverage improves.'], pct_valid_consecutive);
     end
@@ -106,7 +106,7 @@ function stance = compute_stance_swing(fin, varargin)
             while j <= nFrames && isnan(phase(j)), j = j + 1; end
             gap_len = j - i;
             if gap_len <= max_gap && i > 1 && j <= nFrames && phase(i-1) == phase(j)
-                phase(i:j-1) = phase(i-1);   % bridge — same phase on both sides
+                phase(i:j-1) = phase(i-1);   % bridge, same phase on both sides
             end
             i = j;
         else
@@ -124,7 +124,7 @@ function stance = compute_stance_swing(fin, varargin)
         warning(['compute_stance_swing: no complete stance and/or swing bouts survived ' ...
                  'the MinBoutFrames filter (%d frames). Try lowering MinBoutFrames or ' ...
                  'check that this trial actually has a walking/punting gait (this method ' ...
-                 'assumes distinct plant/lift phases — it is not meaningful for continuous ' ...
+                 'assumes distinct plant/lift phases; it is not meaningful for continuous ' ...
                  'sculling or free-swimming fin motion).'], min_bout);
         mean_contact = NaN; mean_swing = NaN; duty_factor = NaN;
     else
@@ -150,7 +150,7 @@ function stance = compute_stance_swing(fin, varargin)
             fin.rootName, fin.tipName, pct_valid_consecutive, n_cycles, ...
             fmt_val(mean_contact), fmt_val(mean_swing), fmt_val(duty_factor));
     if pct_valid_consecutive < 70
-        fprintf('  ^ LOW COVERAGE WARNING ABOVE APPLIES — verify against your measured contact-time CSV.\n');
+        fprintf('  ^ LOW COVERAGE WARNING ABOVE APPLIES: verify against your measured contact-time CSV.\n');
     end
 end
 

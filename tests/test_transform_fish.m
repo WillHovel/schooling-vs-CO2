@@ -3,7 +3,7 @@ function test_transform_fish()
 %
 % Ground truth strategy: synth_fish builds fish with EXACTLY known camera
 % geometry, so every property of the transform is predictable:
-%   1. camera roundtrip — X/Y + transform_params must reconstruct the raw
+%   1. camera roundtrip: X/Y + transform_params must reconstruct the raw
 %      camera coordinates to floating-point precision (this pins down the
 %      whole rotation/translation/scaling/mirroring chain at once);
 %   2. a perfectly straight fish must land on Y = 0 with X = station

@@ -9,7 +9,7 @@ function cyc = compute_cycle_frequencies(y, fps, min_freq, max_freq, ref_freq_Hz
 %   compute_kinematics.m's head_TBF/tail_TBF give ONE FFT-averaged
 %   frequency for the whole trial. This instead detects each individual
 %   oscillation cycle via interpolated positive-going zero-crossings and
-%   reports one frequency PER CYCLE — e.g. 4 beats in a clip -> 4 numbers,
+%   reports one frequency PER CYCLE, e.g. 4 beats in a clip -> 4 numbers,
 %   not 1 average.
 %
 %   IMPORTANT ACCURACY NOTE: body-relative Y time series in this toolkit
@@ -23,7 +23,7 @@ function cyc = compute_cycle_frequencies(y, fps, min_freq, max_freq, ref_freq_Hz
 %   validated FFT-based value for the same signal (~0.30 Hz, confirmed
 %   against both a full power-spectrum check AND a visual beat count).
 %   This is a genuine accuracy limitation of zero-crossing counting on
-%   this kind of data, not a bug to be tuned away — DO NOT trust this
+%   this kind of data, not a bug to be tuned away; DO NOT trust this
 %   function's output blindly. Always sanity-check n_cycles and
 %   mean_freq_Hz against a visual beat count and/or the FFT-based
 %   head_TBF/tail_TBF for the same trial. Passing ref_freq_Hz (e.g.
@@ -33,7 +33,7 @@ function cyc = compute_cycle_frequencies(y, fps, min_freq, max_freq, ref_freq_Hz
 %   INPUTS
 %     y             - [nFrames x 1] lateral (or DV) displacement time
 %                     series. Should already be NaN-filled (see fill_nan
-%                     in compute_kinematics.m) — this function does not
+%                     in compute_kinematics.m), this function does not
 %                     itself handle missing data.
 %     fps           - frames per second
 %     min_freq      - (optional) Hz. Cycles implying a frequency below
@@ -45,7 +45,7 @@ function cyc = compute_cycle_frequencies(y, fps, min_freq, max_freq, ref_freq_Hz
 %                     against. Triggers a warning if mean_freq_Hz differs
 %                     from it by more than 25%.
 %
-%   OUTPUT  cyc — struct:
+%   OUTPUT  cyc: struct:
 %     .freqs_Hz            [nCycles x 1] frequency of each detected cycle
 %     .periods_s           [nCycles x 1] period of each detected cycle
 %     .cycle_start_frame   [nCycles x 1] fractional (interpolated) frame
@@ -69,7 +69,7 @@ function cyc = compute_cycle_frequencies(y, fps, min_freq, max_freq, ref_freq_Hz
 
     % ---- Detrend: subtract a moving-average baseline before counting
     % zero-crossings, so slow drift isn't mistaken for the DC level of a
-    % clean oscillation. Window = n/5 by default — a heuristic, not a
+    % clean oscillation. Window = n/5 by default, a heuristic, not a
     % universally correct value; if your cycle counts look wrong, this is
     % the first thing to try adjusting (edit the constant below or copy
     % this function and expose it as a parameter for your use case). ----
@@ -126,7 +126,7 @@ function cyc = compute_cycle_frequencies(y, fps, min_freq, max_freq, ref_freq_Hz
         rel_diff = abs(cyc.mean_freq_Hz - ref_freq_Hz) / ref_freq_Hz;
         if rel_diff > 0.25
             warning(['compute_cycle_frequencies: per-cycle mean (%.3f Hz, %d cycles) ' ...
-                     'differs from the reference frequency (%.3f Hz) by %.0f%% — this is ' ...
+                     'differs from the reference frequency (%.3f Hz) by %.0f%%, this is ' ...
                      'exactly the kind of disagreement flagged in this function''s docstring. ' ...
                      'Do a visual beat count on this trial before trusting either number.'], ...
                      cyc.mean_freq_Hz, cyc.n_cycles, ref_freq_Hz, 100*rel_diff);

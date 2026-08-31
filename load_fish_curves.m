@@ -13,14 +13,14 @@ function fish_points = load_fish_curves(filename)
 %
 %   The data is ALREADY in body-frame coordinates (equivalent to the output of
 %   transform_fish), so no further coordinate transformation is needed.
-%   Pass the result directly to compute_kinematics — skip transform_fish.
+%   Pass the result directly to compute_kinematics, skip transform_fish.
 %
 %   Typical usage:
 %     fp   = load_fish_curves('..._CURVES_fish1.csv');
 %     kine = compute_kinematics(fp, fps, min_freq);
 %
-%   OUTPUT  fish_points — struct (same schema as transform_fish output):
-%     .name        string  — filename stem
+%   OUTPUT  fish_points: struct (same schema as transform_fish output):
+%     .name        string: filename stem
 %     .frames      [nFrames x 1]
 %     .point_names {1 x nPoints}  body station labels, e.g. {'s60mm','s70mm',...}
 %     .points      [nFrames x nPoints x 2]  raw (X, Y) columns from file
@@ -29,9 +29,9 @@ function fish_points = load_fish_curves(filename)
 %     .body_pos_mm [1 x nPoints]  body station positions in mm (60–240)
 %     .X           [nFrames x nPoints]  normalized body-axis position (pre-computed)
 %     .Y           [nFrames x nPoints]  lateral displacement in BL (pre-computed)
-%     .pre_transformed  true  — signals that transform_fish must be skipped
+%     .pre_transformed  true: signals that transform_fish must be skipped
 
-    %% ---- Read raw file (no header parsing by readtable — first row is our header) ----
+    %% ---- Read raw file (no header parsing by readtable; first row is our header) ----
     opts = detectImportOptions(filename);
     opts.VariableNamingRule = 'preserve';
     opts.DataLines          = [1 Inf];   % read everything
@@ -59,7 +59,7 @@ function fish_points = load_fish_curves(filename)
 
     %% ---- Split into X and Y matrices ----
     % Even 1-indexed columns = X (lateral displacement in BL)
-    % Odd  1-indexed columns = Y (dorso-ventral or lateral — see notes)
+    % Odd  1-indexed columns = Y (dorso-ventral or lateral, see notes)
     %
     % NOTE: In this format X is the normalized position along the body axis
     % (increases 0→1 head to tail), and Y is lateral displacement in BL.

@@ -137,7 +137,7 @@ mkdir('PlotsAdj'); % create output folder if needed
 % then subtract it to translate so nose is at x = 0
 
 midlines.X = nan(height(midlines), 1);
-midlines.Y = midlines.yrot; % Y is unchanged — fish oscillate freely in y
+midlines.Y = midlines.yrot; % Y is unchanged, fish oscillate freely in y
 
 clip_midline_combos = unique(midlines(:, {'clip_id', 'midline'}), 'rows');
 
@@ -183,7 +183,7 @@ writetable(midlines, 'MidlinesZebEggAdj.csv');
 
 
 %% PRE-ROTATION DIAGNOSTIC PLOTS -- TESTING ONLY
-% Plots raw (xBL, yBL) before rotation — compare against PlotsRot to verify correction
+% Plots raw (xBL, yBL) before rotation, compare against PlotsRot to verify correction
 
 mkdir('Plots'); % create output folder if needed
 

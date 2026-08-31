@@ -5,7 +5,7 @@ function fish_points = load_fish_points_dlc_multianimal(filename, p_cutoff)
 %   fish_points = load_fish_points_dlc_multianimal(filename)
 %   fish_points = load_fish_points_dlc_multianimal(filename, p_cutoff)
 %
-%   This is DIFFERENT from every other loader in this toolkit — a DLC
+%   This is DIFFERENT from every other loader in this toolkit: a DLC
 %   multi-animal project export has FOUR header rows, not one or three:
 %       row1: scorer,       DLC_resnet50_..., DLC_resnet50_..., ...
 %       row2: individuals,  individual1,      individual1,     ...
@@ -13,10 +13,10 @@ function fish_points = load_fish_points_dlc_multianimal(filename, p_cutoff)
 %       row4: coords,       x,                y,          likelihood, ...
 %       row5+: <frame idx>, <data...>
 %   Every fish's worth of columns repeats for each unique value in the
-%   "individuals" row. Do NOT try load_fish_points_named on this format —
+%   "individuals" row. Do NOT try load_fish_points_named on this format;
 %   its single-row-header assumption doesn't match a 4-row DLC header at
 %   all (same class of mismatch as the raw single-animal 3-row DLC header
-%   handled elsewhere in this toolkit — this format just has one MORE
+%   handled elsewhere in this toolkit; this format just has one MORE
 %   header row on top of that).
 %
 %   INPUTS
@@ -25,16 +25,16 @@ function fish_points = load_fish_points_dlc_multianimal(filename, p_cutoff)
 %                  likelihood below this is set to NaN. Default 0 (no
 %                  filtering).
 %
-%   OUTPUT  fish_points — struct ARRAY, one element per unique individual
+%   OUTPUT  fish_points: struct ARRAY, one element per unique individual
 %   found in the "individuals" row, in the SAME schema as
-%   load_fish_points.m — a drop-in for anything expecting that struct
+%   load_fish_points.m, a drop-in for anything expecting that struct
 %   array, including compute_polarization / compute_angle_to_flow /
 %   compute_distance_between_individuals / filter_dlc_jumps:
-%     .name        — the individual's label (e.g. 'individual1')
+%     .name:       the individual's label (e.g. 'individual1')
 %     .frames      [nFrames x 1]
 %     .point_names {1 x nPoints}  bodypart names, in first-appearance
 %                  order for that individual (e.g. 'snout','mid 1',...)
-%     .points      [nFrames x nPoints x 2]  (x,y) — this format doesn't
+%     .points      [nFrames x nPoints x 2]  (x,y), this format doesn't
 %                  carry a Z coordinate
 %     .has_z       false
 %     .format      'dlc_multianimal'
@@ -50,7 +50,7 @@ function fish_points = load_fish_points_dlc_multianimal(filename, p_cutoff)
 
     frames = cellfun(@to_num, data(:,1));
 
-    % Column 1 is the frame index in every row above — individuals/
+    % Column 1 is the frame index in every row above, individuals/
     % bodyparts/coords are only meaningful from column 2 onward.
     dataCols = 2:size(raw,2);
     individuals = row_individuals(dataCols);
@@ -61,7 +61,7 @@ function fish_points = load_fish_points_dlc_multianimal(filename, p_cutoff)
     nFish = numel(uniq_individuals);
 
     if nFish == 0
-        error('load_fish_points_dlc_multianimal: no individuals found in row 2 of %s — check this is really a multi-animal DLC export.', filename);
+        error('load_fish_points_dlc_multianimal: no individuals found in row 2 of %s: check this is really a multi-animal DLC export.', filename);
     end
 
     fish_points(nFish) = struct('name','', 'frames',[], 'point_names',{{}}, ...
@@ -87,7 +87,7 @@ function fish_points = load_fish_points_dlc_multianimal(filename, p_cutoff)
             col_p = match(strcmpi(coords(match), 'likelihood'));
 
             if isempty(col_x) || isempty(col_y)
-                warning('load_fish_points_dlc_multianimal: bodypart "%s" missing x/y for %s — left as NaN.', bp, indiv);
+                warning('load_fish_points_dlc_multianimal: bodypart "%s" missing x/y for %s: left as NaN.', bp, indiv);
                 n_missing = n_missing + 1;
                 continue;
             end

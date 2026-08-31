@@ -1,9 +1,9 @@
 function fish_points = load_fish_points_named(filename, selected_points, point_order)
 % LOAD_FISH_POINTS_NAMED  Load named-column or dual-camera 2D tracking CSV.
 %
-%   (See original docstring — unchanged. This version patches the FORMAT B
+%   (See original docstring, unchanged. This version patches the FORMAT B
 %   point-extraction loop to handle columns MATLAB imported as text
-%   because every value in them was "NA" — a fully-occluded landmark.
+%   because every value in them was "NA", a fully-occluded landmark.
 %   Previously this would crash with "Conversion to double from cell is
 %   not possible"; now it becomes a clean all-NaN column with a warning.)
 
@@ -31,7 +31,7 @@ function fish_points = load_fish_points_named(filename, selected_points, point_o
     base_names = cellfun(@(t) t{1}{1}, tok_x(~cellfun(@isempty,tok_x)), 'UniformOutput', false);
     base_names = unique(base_names, 'stable');
 
-    %% If no selection given — print available names and return
+    %% If no selection given, print available names and return
     if nargin < 2 || isempty(selected_points)
         fprintf('\nAvailable points in %s:\n', filename);
         for i = 1:numel(base_names)
@@ -107,7 +107,7 @@ function v = to_numeric_col(col_data, pointName, dimLabel)
         col_data = str2double(col_data);
         if all(isnan(col_data))
             warning(['load_fish_points_named: "%s_%s" is 100%% missing in this file ' ...
-                     '(fully occluded/untracked landmark) — likely the far side of the ' ...
+                     '(fully occluded/untracked landmark), likely the far side of the ' ...
                      'animal from the camera. Consider using the corresponding left/near-' ...
                      'side point instead.'], pointName, dimLabel);
         end
@@ -222,7 +222,7 @@ end
 
 
 % =========================================================================
-%  PECTORAL FIN PHASE ANALYSIS (FORMAT D) — unchanged from original
+%  PECTORAL FIN PHASE ANALYSIS (FORMAT D), unchanged from original
 % =========================================================================
 function result = compute_pect_phase(cam_data, cam_bases, pt_bases, nFrames)
     result = struct();

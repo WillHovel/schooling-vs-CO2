@@ -4,7 +4,7 @@ function test_apply_body_transform()
 %
 %   1. Self-consistency: projecting each MIDLINE point must reproduce the
 %      exact X/Y that transform_fish computed for it (same formula, so
-%      this pins the interface — any drift between the two breaks girdle
+%      this pins the interface, any drift between the two breaks girdle
 %      and fin analyses).
 %   2. A point rigidly attached to a straight fish has CONSTANT body-frame
 %      coordinates equal to its known body position (head at X=0).
@@ -16,7 +16,7 @@ function test_apply_body_transform()
     tf = transform_fish(fp);
     tp = tf.transform_params;
 
-    % ---- 1) Self-consistency on every midline point (one point at a time —
+    % ---- 1) Self-consistency on every midline point (one point at a time,
     %         apply_body_transform's interface is [nFrames x 2/3]) ----
     for i = 1:size(tf.X, 2)
         [Xb, Yb] = apply_body_transform(tf.points(:, i, 1:2), tp);

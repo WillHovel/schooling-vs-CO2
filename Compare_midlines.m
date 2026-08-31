@@ -12,11 +12,11 @@
 CURVES_FILE   = 'FF1_17_NOV_2025_1.50_S_V_000000_S0001_S0001_avi.avi_CURVES.xls';
 DLC_FILE      = 'FF1_17_NOV_2025_1.50_S_V_000000_S0001DLC_resnet50_frogfish_ruby_willJul20shuffle1_100000.csv';
 CURVES_FPS    = 30.0;   % <-- FILL IN: fps used for the DLTdv/CURVES digitizing
-DLC_FPS       = 30.0;  % confirmed from the DLC _meta.pickle — no need to change
+DLC_FPS       = 30.0;  % confirmed from the DLC _meta.pickle, no need to change
 MIN_FREQ      = 0.5;   % Hz, same floor used elsewhere in this toolkit
 
 if isnan(CURVES_FPS)
-    error(['Set CURVES_FPS at the top of this script before running — ' ...
+    error(['Set CURVES_FPS at the top of this script before running: ' ...
            'frequency (Hz) cannot be computed without it.']);
 end
 
@@ -25,7 +25,7 @@ fp_curves = load_fish_curves(CURVES_FILE);
 kine_curves = compute_kinematics(fp_curves, CURVES_FPS, MIN_FREQ);
 
 %% ---- Load Source 2: raw DeepLabCut export ----
-% Midline points only (Mid1..Mid7) — pectoral points aren't part of the
+% Midline points only (Mid1..Mid7), pectoral points aren't part of the
 % body midline, so they're excluded from this comparison. Verify Mid1 is
 % truly the head before trusting this order (see prior evaluation notes).
 fp_dlc = load_fish_points_named(DLC_FILE, ...
@@ -84,7 +84,7 @@ for i = 1:size(metrics,1)
     fprintf('%-28s %14.4f %14.4f %9.1f%%\n', name, v1, v2, diff_pct);
 end
 
-fprintf('\nNote: frame counts differ (CURVES=%d frames, DLC=%d frames) — this\n', ...
+fprintf('\nNote: frame counts differ (CURVES=%d frames, DLC=%d frames), this\n', ...
         size(kine_curves.Y_interp,1), size(kine_dlc.Y_interp,1));
 fprintf('affects duration/statistical power but not the Hz frequency values\n');
 fprintf('themselves, as long as CURVES_FPS above is correct.\n');

@@ -1,8 +1,8 @@
 function kine = compute_kinematics(fish_points, fps, min_freq)
 % COMPUTE_KINEMATICS  FFT-based kinematic analysis on transformed fish midlines.
 %
-%   (See original docstring — unchanged from prior version. This file
-%   patches two local helpers — fill_nan, dominant_freq — so that
+%   (See original docstring, unchanged from prior version. This file
+%   patches two local helpers, fill_nan, dominant_freq, so that
 %   degenerate/all-NaN input produces NaN output instead of a silently
 %   fabricated number, fixes fft_interp's duplicated-endpoint bug,
 %   converts Y to the world-frame lateral displacement with the
@@ -36,12 +36,12 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         if n_frames_with_data == 0
             warning(['compute_kinematics: %s has ZERO frames with complete X/Y data. ' ...
                      'All outputs for this animal will be NaN (not a fabricated ' ...
-                     'placeholder) — check transform_fish output / tracking coverage.'], ...
+                     'placeholder), check transform_fish output / tracking coverage.'], ...
                      fish_points(fi).name);
         end
 
         % ----------------------------------------------------------------
-        % 1.  FFT spatial interpolation — nPoints -> N_OUT per frame
+        % 1.  FFT spatial interpolation: nPoints -> N_OUT per frame
         % ----------------------------------------------------------------
         X_interp = NaN(nFrames, N_OUT);
         Y_interp = NaN(nFrames, N_OUT);
@@ -98,7 +98,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         end
 
         % Remove each frame's spatial mean (the s-independent rigid-body
-        % recoil — body-axis sway, tank circling). It adds the same complex
+        % recoil, body-axis sway, tank circling). It adds the same complex
         % offset to every station's phase at the beat frequency and flattens
         % the phase gradient; subtracting it leaves the traveling wave
         % intact (a full-period wave has exactly zero spatial mean, so
@@ -125,7 +125,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         end
 
         % ----------------------------------------------------------------
-        % 4.  Beat frequencies — temporal FFT on first (head) and last
+        % 4.  Beat frequencies: temporal FFT on first (head) and last
         %     (tail) point of the CLEANED lateral displacement.
         %     CHANGE NOTE (bug fix): the raw transform output Y is the
         %     distance from the per-frame fitted midline, and that line
@@ -141,7 +141,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         head_Y = fill_nan(Yc_raw(:, 1));
         % CHANGE NOTE (head_TBF trend removal): Yc_raw is the WORLD-frame
         % lateral displacement, so the head's trace also carries the
-        % rigid-body translation along the swimming path — a slow trend.
+        % rigid-body translation along the swimming path, a slow trend.
         % dominant_freq's mean removal alone turns a straight-path
         % translation into a sawtooth whose 1/f spectrum buries the beat
         % (a straight-path synthetic at a 30-degree heading measured the
@@ -167,7 +167,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         % 1.83 Hz). The tail's camera y RELATIVE TO THE PER-FRAME
         % CENTROID of all tracked points removes the common-mode
         % translation/sway that contaminates the raw signal while
-        % carrying none of the midline fit's wobble — it measured the
+        % carrying none of the midline fit's wobble, it measured the
         % true beat in both validated trials (swim 1.83 Hz, walk
         % 2.95 Hz). The head keeps the cleaned signal: its camera y is
         % dominated by whole-body translation, which the midline-relative
@@ -196,7 +196,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         end
 
         % ----------------------------------------------------------------
-        % 4b. Spline (interpolated-midline) frequency — comparison value
+        % 4b. Spline (interpolated-midline) frequency: comparison value
         %     alongside head/tail TBF. Dominant temporal frequency at EACH
         %     interpolated midline station; the summary is the median over
         %     stations that actually oscillate (>= 10% of the max station
@@ -222,7 +222,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
 
         % ----------------------------------------------------------------
         % 5.  Propulsive wavelength (two-stage complex-amplitude +
-        %     phase-gradient traveling-wave fit — see spatial_wavelength
+        %     phase-gradient traveling-wave fit, see spatial_wavelength
         %     below for why the old envelope-FFT method was replaced: it
         %     always returned 1.005 BL for every animal, why the
         %     intermediate phase-gradient version was biased for
@@ -235,16 +235,16 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         [wavelength, wave_sf, wave_pow] = spatial_wavelength(Y_interp, s_norm, fs, f_dom, slin);
         % Wave speed intentionally stays TBF-based: head_TBF / tail_TBF /
         % spline_freq are all exported alongside it for comparison.
-        wave_speed = wavelength * tail_TBF;   % BL/s — wave speed = wavelength x TBF
+        wave_speed = wavelength * tail_TBF;   % BL/s, wave speed = wavelength x TBF
 
         % ----------------------------------------------------------------
-        % 6.  Curvature — XY plane
+        % 6.  Curvature, XY plane
         % ----------------------------------------------------------------
         [curv_mean, curv_std, maxCurv, maxCurvLoc] = ...
             curvature_stats(X_interp, Y_interp, [], s_norm, nFrames, N_OUT);
 
         % ----------------------------------------------------------------
-        % 7.  Curvature — 3-D (if Z available)
+        % 7.  Curvature, 3-D (if Z available)
         % ----------------------------------------------------------------
         curv3d_mean = []; curv3d_std = []; maxCurv3D = NaN; maxCurv3DLoc = NaN;
         if has_z
@@ -260,7 +260,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         kine(fi).Y_interp         = Y_interp;
         kine(fi).Z_interp         = Z_interp;
         kine(fi).s_norm           = s_norm;
-        kine(fi).n_frames_with_data = n_frames_with_data;   % NEW — sanity-check field
+        kine(fi).n_frames_with_data = n_frames_with_data;   % NEW: sanity-check field
 
         kine(fi).amp_mean         = amp_mean;
         kine(fi).amp_std          = amp_std;
@@ -294,7 +294,7 @@ function kine = compute_kinematics(fish_points, fps, min_freq)
         kine(fi).wavelength       = wavelength;
         kine(fi).wave_spatial_freq = wave_sf;
         kine(fi).wave_power       = wave_pow;
-        kine(fi).wave_speed_BL_s  = wave_speed;   % NEW — wavelength x tail_TBF
+        kine(fi).wave_speed_BL_s  = wave_speed;   % NEW: wavelength x tail_TBF
 
         kine(fi).curv_mean        = curv_mean;
         kine(fi).curv_std         = curv_std;
@@ -330,7 +330,7 @@ function y_out = fft_interp(y_in, N_out)
 % CHANGE NOTE (bug fix): y_in is sampled on s = linspace(0,1,N_in), so its
 % first and last samples sit at the same physical location s = 0/1 and the
 % sequence's true period is N_in-1 samples. The old code FFT'd all N_in
-% samples, making the implied period N_in/(N_in-1) too long — a periodic
+% samples, making the implied period N_in/(N_in-1) too long, a periodic
 % signal like sin(2*pi*s) then lands 5% off-bin, leaks across the whole
 % spectrum, and interpolates with up to ~30% error near the seam. Dropping
 % the duplicated endpoint puts the period back at exactly N_in-1 samples
@@ -359,7 +359,7 @@ function [amp_mean, amp_std, headAmp, tailAmp, minAmp, minLoc, maxAmp, maxLoc] =
     amp_mean = mean(half_amp, 1, 'omitnan');
     amp_std  = std(half_amp, 0, 1, 'omitnan');
 
-    % CHANGE: use 'omitnan' explicitly (was implicit before — a single NaN
+    % CHANGE: use 'omitnan' explicitly (was implicit before, a single NaN
     % in the head/tail window used to make headAmp/tailAmp NaN even when
     % most of that window had real data; now it only goes NaN if the WHOLE
     % window is empty of data).
@@ -410,7 +410,7 @@ function [curv_mean, curv_std, maxCurv, maxCurvLoc] = ...
     curv_std  = std(curv_all, 0, 1, 'omitnan');
 
     % CHANGE NOTE: MATLAB's max() on an all-NaN vector returns NaN with
-    % index 1 rather than erroring — the ORIGINAL bug used this silently
+    % index 1 rather than erroring; the ORIGINAL bug used this silently
     % to return curv_mean(1) as if it were a real max. Explicitly check
     % first and propagate NaN/NaN instead of a fake location.
     if all(isnan(curv_mean))
@@ -425,7 +425,7 @@ end
 function [f_dom, freqs, power] = dominant_freq(y, fs, min_freq)
 % CHANGE NOTE (bug fix): previously, if y was entirely NaN, fill_nan()
 % (below) silently substituted an all-ZERO vector, and an FFT of a flat
-% zero signal always has zero power everywhere — MATLAB's max() on an
+% zero signal always has zero power everywhere; MATLAB's max() on an
 % all-zero/all-equal vector returns index 1 by convention instead of
 % erroring, so the OLD code always returned the same fake frequency
 % (whatever the lowest FFT bin >= min_freq happened to be) with no
@@ -448,7 +448,7 @@ function [f_dom, freqs, power] = dominant_freq(y, fs, min_freq)
     % CHANGE NOTE (leakage gate): when the real dominant frequency lies
     % below min_freq, the valid region holds only that signal's sidelobes
     % (or pure FFT noise for an integer-cycle tone), and the old code
-    % returned the strongest of those as a fabricated "frequency" — a
+    % returned the strongest of those as a fabricated "frequency", a
     % synthetic 2 Hz beat measured 46 Hz with min_freq = 3. Reject when
     % the valid peak is negligible next to the global peak, or when it is
     % not a local maximum of the FULL spectrum (a stronger neighbor on
@@ -472,7 +472,7 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
 % CHANGE NOTE (complete rewrite): the previous version took the FFT of the
 % MEAN AMPLITUDE ENVELOPE, mean(|Y|, t). An amplitude envelope is monotonic
 % (small at the head, large at the tail) and contains NO phase information,
-% so its FFT always peaked at the lowest non-zero spatial-frequency bin —
+% so its FFT always peaked at the lowest non-zero spatial-frequency bin,
 % every animal on every trial got wavelength = 1/(199/200) = 1.005025 BL,
 % identical to six decimals. That value was an artifact of the bin spacing,
 % not a measurement.
@@ -487,10 +487,10 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
 %
 % is fitted: c is the spatially uniform offset (the per-frame spatial-mean
 % removal leaves an offset for any wave with a non-integer number of
-% wavelengths per body — its spatial mean oscillates at the beat
+% wavelengths per body, its spatial mean oscillates at the beat
 % frequency), B the traveling component, and d*col_s the s-linear
 % contamination of the camera projection (see the 6th fix below) whose
-% SHAPE col_s = -slin*s is known from the transform's line-fit wobble —
+% SHAPE col_s = -slin*s is known from the transform's line-fit wobble,
 % only its complex scale d is free. The fit is linear in the complex
 % unknowns (c, B [, d]) for fixed k, so k is scanned over the plausible
 % propulsive range (wavelength 0.4-4 BL) and refined with fminbnd.
@@ -498,21 +498,21 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
 % CHANGE NOTE (4th estimator): the previous version measured each
 % station's PHASE and fitted a line through unwrapped phases. A uniform
 % complex offset added to every station's Fourier coefficient does not
-% shift all phases equally — it perturbs each phase by an amount that
-% oscillates along the body — so the phase-gradient fit came out
+% shift all phases equally, it perturbs each phase by an amount that
+% oscillates along the body, so the phase-gradient fit came out
 % systematically biased for non-integer wavelengths (a synthetic
 % lambda=0.8 measured 0.820, +2.5% high). Fitting the offset explicitly
 % removes the bias: the same synthetic now measures 0.7996, and lambda=1
 % improves from 1.0015 to 1.0003.
 %
-% CHANGE NOTE (5th estimator — two-stage): the complex fit above is
+% CHANGE NOTE (5th estimator, two-stage): the complex fit above is
 % biased by amplitude MODULATION along the body: a modulated envelope
 % leaks into the fitted c and B and pulls k (a synthetic with
 % A(s) = A*(1 + 0.5 sin(2 pi s)) measured 0.988 for a true 1.0). The
 % final wavelength therefore comes from a second stage: a line fit
 % through the unwrapped phases (amplitude^2-weighted), with the fitted
 % offset c subtracted first ONLY when the envelope ratio (max/min
-% station amplitude over the kept stations) is <= 4 — for strongly
+% station amplitude over the kept stations) is <= 4, for strongly
 % modulated real animals cB(1) is envelope-corrupted and the raw phases
 % are used instead. Modulation changes only the amplitudes, not the
 % phases, so the phase gradient is envelope-robust either way. This
@@ -521,7 +521,7 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
 % matches the manually validated value on a real swim trial (1.2 vs the
 % offset-removed stage's 2.6).
 %
-% CHANGE NOTE (6th fix — s-linear contamination): the correction above
+% CHANGE NOTE (6th fix, s-linear contamination): the correction above
 % makes each frame's corrected signal exactly ycam*cos(theta)/bl, but
 % the TRUE body lateral is y_b = cos(h)*yc - sin(h)*(xc - cx) + const.
 % Expanding around the fitted theta = 2*pi - h - delta(t) (the line-fit
@@ -529,39 +529,39 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
 %   yc*cos(theta)/bl - y_b/L = (cos(theta)*cos(h) - 1)*y_b/L
 %                              + cos(theta)*sin(h)*(-s_true) + const(t).
 % The first term only rescales the wave amplitude (its f0 part is
-% cos^2(h)*y_b — no phase change), but the second term's f0 coefficient
-% is CT*sin(h)*(-s) — LINEAR in station s — where CT is the f0
+% cos^2(h)*y_b, no phase change), but the second term's f0 coefficient
+% is CT*sin(h)*(-s), LINEAR in station s, where CT is the f0
 % coefficient of cos(theta(t)). For a 30-degree fish CT ~ 0.005 and the
 % contaminant reaches ~48% of the wave amplitude at the tail, dragging
 % the phase gradient from -360 to -384 deg/BL (lambda 1.0 measured 0.94).
-% The contamination's SHAPE is therefore known — col_s = -CT*sin(h)*s
+% The contamination's SHAPE is therefore known, col_s = -CT*sin(h)*s
 % with CT measured from the per-frame transform angles and h implied by
-% their circular mean — and the complex model is extended with this FIXED
+% their circular mean, and the complex model is extended with this FIXED
 % column (complex scale d fitted): G(s) = c + B*exp(-i*k*s) + d*col_s.
 % A free d*s column was tried first and overfit the modulated-envelope
 % synthetic (0.955 for a true 1.0); the fixed shape does not, because on
 % the heading-0 synthetics CT vanishes identically (cos(theta) wobbles
-% only at 2*f0 there) and the column self-nulls — the exact 1.0000/0.8000
+% only at 2*f0 there) and the column self-nulls, the exact 1.0000/0.8000
 % measurements are unaffected, and the tilted fish now measures 1.0000.
 %
 % AFFINE-CONTAMINATION CORRECTION (2nd fix, kept): Y comes from
 % transform_fish, which detrends every frame by fitting a midline
 % (intercept a, slope b) through the middle points and subtracting it. But
-% that fitted line ITSELF oscillates at the beat frequency — it absorbs a
-% significant part of the traveling wave — so each station's Fourier
+% that fitted line ITSELF oscillates at the beat frequency; it absorbs a
+% significant part of the traveling wave, so each station's Fourier
 % amplitude at f_dom is offset by a KNOWN contamination, which pulls every
 % station's phase toward a common direction and systematically steepens
 % the fitted gradient (a synthetic wave with a true gradient of 450
 % deg/BL measured 540 deg/BL -> lambda 0.67 instead of 0.80).
 %
-% 3rd fix — EXACT correction, applied BEFORE interpolation: the
+% 3rd fix: EXACT correction, applied BEFORE interpolation: the
 % contamination is the fitted midline's own value in the rotated body
 % frame, (a - tan(theta)*x_cam)*cos(theta)/bl. This is exact: the
 % transform_fish roundtrip identity Y*bl = (ycam - a + tan(theta)*xcam)*
 % cos(theta) holds to machine precision, so adding the line's value back
 % reconstructs ycam*cos(theta)/bl up to a per-frame constant. The
 % correction is applied to the RAW points in the interpolation step
-% (section 1) — interpolating the clean signal is exact for periodic
+% (section 1), interpolating the clean signal is exact for periodic
 % waves, whereas interpolating the contamination and correcting
 % afterwards leaves seam-ringing errors. Y_interp therefore arrives here
 % as the world-frame lateral displacement with each frame's spatial mean
@@ -624,7 +624,7 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
     s_ok = s_norm(ok); G_ok = G(ok); A_ok = abs(G_ok);
 
     % No real oscillation anywhere (e.g. a standing wave whose spatial
-    % mean removal already zeroed the signal) — NaN beats a fabricated
+    % mean removal already zeroed the signal), NaN beats a fabricated
     % wavelength.
     if max(A_ok) < 1e-12, return; end
 
@@ -633,7 +633,7 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
     % wreck the fit with noise.
     keep = A_ok >= 0.1 * max(A_ok);
     if sum(keep) < 3
-        keep = true(size(A_ok));   % too few strong stations — use all
+        keep = true(size(A_ok));   % too few strong stations, use all
     end
     s_ok = s_ok(keep); G_ok = G_ok(keep); A_ok = A_ok(keep);
 
@@ -642,7 +642,7 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
     % the scan finds the global optimum to scan resolution and fminbnd
     % refines it. col_s is the FIXED s-linear contamination column
     % -slin*s (see the 6th fix header note): its shape is known from the
-    % transform's line-fit wobble, so only its complex scale d is free —
+    % transform's line-fit wobble, so only its complex scale d is free;
     % this keeps the fit from absorbing envelope modulation the way a
     % free d*s column did.
     W     = A_ok(:) .^ 2;  W = W / sum(W);
@@ -679,12 +679,12 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
     % phases). A uniform complex offset added to every station's Fourier
     % coefficient perturbs each phase by an amount that oscillates along
     % the body, so the offset fitted by the complex model above is
-    % subtracted first — BUT only when the envelope is flat enough that
+    % subtracted first, BUT only when the envelope is flat enough that
     % the complex fit's offset estimate is trustworthy. A strongly
     % modulated envelope (real animals: near-zero head amplitude growing
     % to the tail) leaks into the fitted c and B and corrupts cB(1), so
     % subtracting it distorts the phases (a validated swim trial measured
-    % 2.6 BL vs a manual ~1.2); there the raw phases are used instead —
+    % 2.6 BL vs a manual ~1.2); there the raw phases are used instead;
     % the amplitude^2 weights already de-emphasize the low-amplitude
     % head stations where the offset's phase perturbation is largest.
     % In the flat-envelope branch the fitted s-linear contamination
@@ -710,7 +710,7 @@ function [wavelength, sf, power] = spatial_wavelength(Y_interp, s_norm, fs, f_do
     if abs(beta(2)) > 1e-6
         wavelength = 360 / abs(beta(2));            % BL per cycle
     else
-        wavelength = 2*pi / abs(k_opt);             % flat phase — keep complex fit
+        wavelength = 2*pi / abs(k_opt);             % flat phase, keep complex fit
     end
     sf         = 1 / wavelength;      % cycles per BL
     power      = max(min(r2, 1), 0);

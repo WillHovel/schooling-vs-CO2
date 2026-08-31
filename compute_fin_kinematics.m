@@ -13,17 +13,17 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
 %     tipName   - base name of the fin tip landmark, e.g. 'Rpecttip' or 'pt2'
 %     fps       - frames per second (scalar)
 %     min_freq  - OPTIONAL, Hz floor for fin-beat frequency detection
-%                 (default 0.5). Same purpose as compute_kinematics' min_freq —
+%                 (default 0.5). Same purpose as compute_kinematics' min_freq,
 %                 set it based on a visual beat count for this trial, not
 %                 blindly left at the default (see prior evaluation notes:
 %                 a too-high floor can make the FFT lock onto a harmonic
 %                 instead of the true fundamental).
 %     body_speed_BL_s - OPTIONAL, mean forward body speed in BL/s (e.g.
-%                 ext.mean_speed_BL_s from compute_body_extended.m) — used
+%                 ext.mean_speed_BL_s from compute_body_extended.m), used
 %                 to compute fin stride length. If omitted, stride_length
 %                 fields are NaN.
 %
-%   OUTPUT  fin — struct with fields (existing fields unchanged, NEW ones marked):
+%   OUTPUT  fin: struct with fields (existing fields unchanged, NEW ones marked):
 %
 %   --- Raw data ---
 %     .frames        [nFrames x 1]  frame indices
@@ -33,7 +33,7 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
 %     .vx/vy/vz      [nFrames x 1]  fin vector components (tip - root)
 %
 %   --- Euler angles (degrees) ---
-%     .yaw / .pitch / .roll   (see original docstring for definitions —
+%     .yaw / .pitch / .roll   (see original docstring for definitions,
 %                              unchanged)
 %
 %   --- Derived kinematics ---
@@ -45,7 +45,7 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
 %     .fin_freq_Hz          dominant oscillation frequency of the fin's
 %                            yaw angle over time (the fin-beat rate,
 %                            analogous to tail-beat frequency)
-%     .fin_freq_pitch_Hz    same, but from the pitch signal — useful when
+%     .fin_freq_pitch_Hz    same, but from the pitch signal, useful when
 %                            the fin's dominant motion is more of a
 %                            flap (pitch) than a sweep (yaw); compare the
 %                            two and use whichever matches your visual
@@ -59,7 +59,7 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
 %     .stride_duration_s    period of one fin-beat cycle = 1/fin_freq_Hz
 %
 %   --- Summary statistics (valid frames only) ---
-%     (unchanged from original — see original docstring)
+%     (unchanged from original, see original docstring)
 %
 %   REQUIRED TOOLBOXES: none (uses only base MATLAB)
 
@@ -79,10 +79,10 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
     [tip_xyz,  tip_err]  = extract_xyz(T, cols, tipName,  nFrames);
 
     if ~isempty(root_err)
-        error('compute_fin_kinematics: root point "%s" — %s', rootName, root_err);
+        error('compute_fin_kinematics: root point "%s": %s', rootName, root_err);
     end
     if ~isempty(tip_err)
-        error('compute_fin_kinematics: tip point "%s" — %s', tipName, tip_err);
+        error('compute_fin_kinematics: tip point "%s": %s', tipName, tip_err);
     end
 
     %% ---- Fin vector (tip relative to root) ----
@@ -203,7 +203,7 @@ function fin = compute_fin_kinematics(csvPath, rootName, tipName, fps, min_freq,
     fin.std_ang_vel  = std(ang_vel_v,  'omitnan');
     fin.peak_ang_vel = max(ang_vel_v);
 
-    % Tracked window: rows where the fin has any data — excludes
+    % Tracked window: rows where the fin has any data, excludes
     % leading/trailing all-empty padding rows common in exported CSVs.
     n_fin_window = sum(any(~isnan(root_xyz) | ~isnan(tip_xyz), 2));
 
@@ -292,7 +292,7 @@ function [xyz, err] = extract_xyz(T, cols, base, nFrames)
                 % and imports it as text (cell/char) instead of double.
                 % Assigning that straight into a double array used to
                 % throw "Conversion to double from cell is not possible."
-                % Detect and convert explicitly instead — str2double()
+                % Detect and convert explicitly instead, str2double()
                 % turns unparseable text (including "NA") into NaN, which
                 % is exactly the behavior we want: a fully-occluded point
                 % becomes a clean all-NaN column, not a crash.
@@ -331,7 +331,7 @@ function [xyz, err] = extract_xyz(T, cols, base, nFrames)
     for d = 1:3
         if all(isnan(xyz(:,d)))
             warning(['extract_xyz: "%s_%s" is 100%% missing in this file (fully ' ...
-                     'occluded/untracked landmark) — likely the far side of the ' ...
+                     'occluded/untracked landmark), likely the far side of the ' ...
                      'animal from the camera. Consider using the corresponding ' ...
                      'left/near-side point instead.'], base, dim_labels{d});
         end

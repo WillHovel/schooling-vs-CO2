@@ -3,7 +3,7 @@ function test_real_data()
 % trials in Analysis/ and Shoval_Analysis/.
 %
 %   1. WSBS_Swim_1.5BL_Shark03xyzpts.csv: the known-good values visually
-%      verified on this machine — head/tail/spline TBF = 1.8349 Hz,
+%      verified on this machine: head/tail/spline TBF = 1.8349 Hz,
 %      wavelength in (1.1, 1.35) BL, wave_speed = 2.2296 BL/s.
 %   2. WSBS_PSwalk_0.25BL_Shark01xyzpts.csv vs Shoval's manual tail-beat
 %      peaks in Shoval_Analysis/TB_peaks.csv: the FFT-based tail_TBF must
@@ -22,7 +22,7 @@ function test_real_data()
     swim_csv = fullfile(root, 'Analysis', 'AllEdited_CSVs', 'AllEdited_CSVs', ...
                         'WSBS_Swim_1.5BL_Shark03xyzpts.csv');
     if ~isfile(swim_csv)
-        warning('test_real_data: %s not found — skipping swim-trial checks.', swim_csv);
+        warning('test_real_data: %s not found: skipping swim-trial checks.', swim_csv);
     else
         fp = load_fish_points_named(swim_csv, names);
         tf = transform_fish(fp);
@@ -40,7 +40,7 @@ function test_real_data()
     walk_csv  = fullfile(root, 'Analysis', 'AllEdited_CSVs', 'AllEdited_CSVs', ...
                          'WSBS_PSwalk_0.25BL_Shark01xyzpts.csv');
     if ~isfile(peaks_csv) || ~isfile(walk_csv)
-        warning('test_real_data: Shoval cross-check files missing — skipping.');
+        warning('test_real_data: Shoval cross-check files missing: skipping.');
         return;
     end
     T = readtable(peaks_csv, 'Delimiter', ',', 'VariableNamingRule', 'preserve');

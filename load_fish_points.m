@@ -19,9 +19,9 @@ function fish_points = load_fish_points(filename)
 %     pt9  = tip of anal fin
 %     pt10 = tip of dorsal fin
 %     pt11 = eye (left / #2)
-%     pt12 = pectoral fin #2 (left base) — 2D only
+%     pt12 = pectoral fin #2 (left base), 2D only
 %
-%   OUTPUT  fish_points — struct array, one element per fish:
+%   OUTPUT  fish_points: struct array, one element per fish:
 %     .name        string
 %     .frames      [nFrames x 1]
 %     .point_names {1 x nPoints}  cell of point labels

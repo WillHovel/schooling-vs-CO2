@@ -35,11 +35,11 @@ fprintf('  Max amplitude   : %.4f BL at body pos %.2f\n', k.maxAmp, k.maxAmpLoc)
 fprintf('  Wavelength      : %.4f BL\n',  k.wavelength);
 fprintf('  Max curvature   : %.4f at body pos %.2f\n',    k.maxCurv, k.maxCurvLoc);
 
-%% 2. Figure 1 — Interpolated midlines overlaid
+%% 2. Figure 1: Interpolated midlines overlaid
 valid_idx = find(~any(isnan(k.Y_interp), 2));
 cmap      = parula(numel(valid_idx));
 
-figure('Name', sprintf('%s — Interpolated midlines', k.name), ...
+figure('Name', sprintf('%s: Interpolated midlines', k.name), ...
        'Position', [50 550 700 300]);
 hold on; grid on; axis equal;
 yline(0, 'k--', 'LineWidth', 0.8);
@@ -59,12 +59,12 @@ colormap(parula);
 cb = colorbar; cb.Label.String = 'Frame (early → late)';
 clim([valid_idx(1), valid_idx(end)]);
 xlabel('X (nose = 0, BL)'); ylabel('Y (BL)');
-title(sprintf('%s — FFT-interpolated midlines (%d frames)', ...
+title(sprintf('%s: FFT-interpolated midlines (%d frames)', ...
       k.name, numel(valid_idx)));
 legend('Location','best');
 
-%% 3. Figure 2 — Amplitude envelope
-figure('Name', sprintf('%s — Amplitude envelope', k.name), ...
+%% 3. Figure 2: Amplitude envelope
+figure('Name', sprintf('%s: Amplitude envelope', k.name), ...
        'Position', [50 180 600 300]);
 hold on; grid on;
 
@@ -78,11 +78,11 @@ xline(k.maxAmpLoc, 'r--', 'LineWidth', 1, 'Label','max amp');
 
 xlabel('Normalised body position (0 = nose, 1 = tail)');
 ylabel('Mean |Y| half-amplitude (BL)');
-title(sprintf('%s — Amplitude envelope (± 1 SD)', k.name));
+title(sprintf('%s: Amplitude envelope (± 1 SD)', k.name));
 legend({'± 1 SD','Mean'}, 'Location','northwest');
 
-%% 4. Figure 3 — Curvature profile
-figure('Name', sprintf('%s — Curvature', k.name), ...
+%% 4. Figure 3: Curvature profile
+figure('Name', sprintf('%s: Curvature', k.name), ...
        'Position', [660 180 600 300]);
 hold on; grid on;
 
@@ -96,11 +96,11 @@ xline(k.maxCurvLoc, 'k--', 'LineWidth', 1, ...
 
 xlabel('Normalised body position (0 = nose, 1 = tail)');
 ylabel('Mean curvature (1/BL)');
-title(sprintf('%s — Curvature profile (± 1 SD)', k.name));
+title(sprintf('%s: Curvature profile (± 1 SD)', k.name));
 legend({'± 1 SD','Mean'}, 'Location','northwest');
 
-%% 5. Figure 4 — FFT power spectra (head & tail beat frequency)
-figure('Name', sprintf('%s — Beat frequencies', k.name), ...
+%% 5. Figure 4: FFT power spectra (head & tail beat frequency)
+figure('Name', sprintf('%s: Beat frequencies', k.name), ...
        'Position', [660 550 700 450]);
 
 subplot(2,1,1);
@@ -110,7 +110,7 @@ xline(MIN_FREQ,    'k:', 'LineWidth', 1,   'Label', sprintf('min %.1f Hz', MIN_F
 xline(k.head_TBF,  'r--','LineWidth', 1.5, 'Label', sprintf('%.2f Hz', k.head_TBF), ...
       'LabelVerticalAlignment','bottom');
 xlabel('Frequency (Hz)'); ylabel('Power');
-title(sprintf('%s — Head (P1) beat frequency', k.name));
+title(sprintf('%s: Head (P1) beat frequency', k.name));
 grid on;
 
 subplot(2,1,2);
@@ -120,7 +120,7 @@ xline(MIN_FREQ,    'k:', 'LineWidth', 1,   'Label', sprintf('min %.1f Hz', MIN_F
 xline(k.tail_TBF,  'b--','LineWidth', 1.5, 'Label', sprintf('%.2f Hz', k.tail_TBF), ...
       'LabelVerticalAlignment','bottom');
 xlabel('Frequency (Hz)'); ylabel('Power');
-title(sprintf('%s — Tail (P5) beat frequency', k.name));
+title(sprintf('%s: Tail (P5) beat frequency', k.name));
 grid on;
 
-sgtitle(sprintf('%s — Beat frequency spectra', k.name));
+sgtitle(sprintf('%s: Beat frequency spectra', k.name));

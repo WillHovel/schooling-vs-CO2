@@ -6,7 +6,7 @@ function [X, Y, Z] = apply_body_transform(raw_xyz, transform_params)
 %   [X, Y, Z] = apply_body_transform(raw_xyz, transform_params)
 %
 %   Use this to analyze a point that ISN'T one of the midline points fed
-%   into transform_fish — e.g. a fin root/girdle marker — in body-relative
+%   into transform_fish, e.g. a fin root/girdle marker, in body-relative
 %   coordinates, so its motion is comparable frame-to-frame regardless of
 %   the fish's own translation/rotation/size. This is what makes girdle
 %   protraction-retraction analysis possible (compute_girdle_kinematics.m).
@@ -18,7 +18,7 @@ function [X, Y, Z] = apply_body_transform(raw_xyz, transform_params)
 %                         transform_fish.
 %     transform_params - fish_points(i).transform_params from transform_fish
 %                         (a 1 x nFrames struct array with theta, a, x1,
-%                         bl, sign_flip per frame — NaN where that frame's
+%                         bl, sign_flip per frame, NaN where that frame's
 %                         midline transform failed).
 %
 %   OUTPUTS
@@ -29,7 +29,7 @@ function [X, Y, Z] = apply_body_transform(raw_xyz, transform_params)
 %
 %   NOTE: a frame is NaN here whenever the MIDLINE's own transform failed
 %   for that frame (transform_params(f).bl is NaN) OR this point itself is
-%   NaN in that frame — you can't express a point in a coordinate frame
+%   NaN in that frame: you can't express a point in a coordinate frame
 %   that itself couldn't be computed.
 
     nFrames = size(raw_xyz, 1);
@@ -44,7 +44,7 @@ function [X, Y, Z] = apply_body_transform(raw_xyz, transform_params)
         tp = transform_params(f);
         % isempty() catches the case where this frame's transform_params
         % element was never explicitly assigned (see transform_fish.m's
-        % CHANGE NOTE — struct-array preallocation quirks can leave
+        % CHANGE NOTE: struct-array preallocation quirks can leave
         % unset elements as [] rather than NaN). Checking both makes this
         % robust even if that happens again for some other reason.
         if isempty(tp.bl) || isnan(tp.bl), continue; end
@@ -63,7 +63,7 @@ function [X, Y, Z] = apply_body_transform(raw_xyz, transform_params)
             if ~isnan(z)
                 % Z is expressed relative to this point's OWN first valid
                 % frame (there's no single universal DV reference point
-                % once you're off the midline) — see compute_girdle_kinematics
+                % once you're off the midline), see compute_girdle_kinematics
                 % for how this is used in practice.
                 Z(f) = z / tp.bl;
             end

@@ -79,7 +79,7 @@ for idx = 1:length(clip_ids)
         x_vals = data_rows(:, x_col); % 200x1
         y_vals = data_rows(:, y_col); % 200x1
         
-        % Skip if entire midline is NaN (was padded — not digitized)
+        % Skip if entire midline is NaN (was padded, not digitized)
         if all(isnan(x_vals))
             continue;
         end

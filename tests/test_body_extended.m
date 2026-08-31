@@ -9,7 +9,7 @@ function test_body_extended()
 %      0.1 BL/s, stride length = speed/tail_TBF = 0.05, tail_amp_pp =
 %      2*A/L = 0.01, Strouhal = TBF*A_pp/U = 0.2.
 %   3. Signed flow correction: flow +0.05 -> through-water speed 0.15
-%      ('against'); flow -0.02 -> 0.08 ('with') — exact on a straight fish.
+%      ('against'); flow -0.02 -> 0.08 ('with'), exact on a straight fish.
 %   4. Hand-built roll fish: L/R pectoral pair tilted 20 deg about the
 %      body axis -> roll = 20 deg exactly, level head -> pitch 0.
 %   5. Pre-transformed (CURVES) fish translating at 0.1 BL/s: speed exact

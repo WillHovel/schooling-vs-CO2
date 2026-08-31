@@ -9,7 +9,7 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
 %   .transform_params), then reports how much the girdle itself moves
 %   fore-aft (protraction/retraction) and side-to-side over the swim
 %   cycle. This is a genuinely separate signal from the fin's own
-%   yaw/pitch (compute_fin_kinematics) — it captures girdle ROTATION
+%   yaw/pitch (compute_fin_kinematics), it captures girdle ROTATION
 %   about the body itself, not fin sweep relative to the girdle.
 %
 %   INPUTS
@@ -18,20 +18,20 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
 %     girdlePointName   - base column name, e.g. 'RPectBase' (expects
 %                          columns girdlePointName_X, _Y[, _Z]).
 %     fish_points        - the SAME transform_fish() output used for the
-%                          midline (must have .transform_params — requires
+%                          midline (must have .transform_params, requires
 %                          the updated transform_fish.m).
 %     fps, min_freq       - as elsewhere.
 %
-%   OUTPUT  girdle — struct:
+%   OUTPUT  girdle: struct:
 %     .X / .Y / .Z            [nFrames x 1]  girdle position in body-relative
 %                               BL-normalized coordinates (X: fore-aft
-%                               position along the body axis — protraction
+%                               position along the body axis, protraction
 %                               moves this forward/smaller, retraction
 %                               moves it aft/larger; Y: lateral splay)
 %     .protraction_range_BL    fore-aft (X) excursion range
 %     .lateral_range_BL        side-to-side (Y) excursion range
 %     .girdle_freq_Hz          dominant oscillation frequency of the
-%                               fore-aft (X) signal — the girdle's own
+%                               fore-aft (X) signal, the girdle's own
 %                               protraction/retraction beat rate
 %     .n_valid / .n_frames / .pct_valid
 %
@@ -65,10 +65,10 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
                 col_data = T.(cand{c});
 
                 % CHANGE NOTE (bug fix): if a landmark is 100% missing in
-                % this file (e.g. the far-side fin, occluded from camera —
+                % this file (e.g. the far-side fin, occluded from camera,
                 % same pattern as BP_16_RPectoral1 etc.), MATLAB's readtable
                 % can't infer the column is numeric and imports it as text
-                % (cell/char) instead of double. Convert explicitly —
+                % (cell/char) instead of double. Convert explicitly,
                 % str2double() turns unparseable text (including "NA")
                 % into NaN, which is what we want: a fully-occluded point
                 % becomes a clean all-NaN column, not a crash.
@@ -76,7 +76,7 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
                     col_data = str2double(col_data);
                     if all(isnan(col_data))
                         warning(['compute_girdle_kinematics: "%s" is 100%% missing in this ' ...
-                                 'file (fully occluded/untracked landmark) — likely the far ' ...
+                                 'file (fully occluded/untracked landmark), likely the far ' ...
                                  'side of the animal from the camera. Try the corresponding ' ...
                                  'left/near-side point instead.'], cand{c});
                     end
@@ -90,7 +90,7 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
                 if numel(col_data) ~= nFrames
                     error(['compute_girdle_kinematics: column "%s" has %d values but the ' ...
                            'file has %d rows (class: %s). This points to a malformed/ragged ' ...
-                           'CSV row somewhere in the source file — check it opens cleanly ' ...
+                           'CSV row somewhere in the source file, check it opens cleanly ' ...
                            'in Excel/a text editor with a consistent column count on every row.'], ...
                            cand{c}, numel(col_data), nFrames, class(T.(cand{c})));
                 end
@@ -106,7 +106,7 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
     end
 
     if nFrames ~= numel(fish_points.transform_params)
-        error(['compute_girdle_kinematics: frame count mismatch — %s has %d rows but ' ...
+        error(['compute_girdle_kinematics: frame count mismatch: %s has %d rows but ' ...
                'fish_points.transform_params has %d frames. Make sure this is the same ' ...
                'source file/trial used for the midline.'], csvPath, nFrames, numel(fish_points.transform_params));
     end
@@ -115,13 +115,13 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
     [X, Y, Z] = apply_body_transform(raw_xyz, fish_points.transform_params);
 
     n_valid  = sum(~isnan(X) & ~isnan(Y));
-    % Tracked window: rows where the girdle point has any data — excludes
+    % Tracked window: rows where the girdle point has any data, excludes
     % leading/trailing all-empty padding rows common in exported CSVs.
     n_girdle_window = sum(any(~isnan(raw_xyz), 2));
     pct_valid = 100 * n_valid / max(n_girdle_window, 1);
 
     if n_valid == 0
-        warning(['compute_girdle_kinematics: %s has ZERO valid frames after projection — ' ...
+        warning(['compute_girdle_kinematics: %s has ZERO valid frames after projection: ' ...
                  'girdle metrics will be NaN. Check that %s is tracked in at least some ' ...
                  'frames where the midline transform also succeeded.'], girdlePointName, girdlePointName);
         protraction_range = NaN; lateral_range = NaN; girdle_freq = NaN;
@@ -129,7 +129,7 @@ function girdle = compute_girdle_kinematics(csvPath, girdlePointName, fish_point
         protraction_range = range(X(~isnan(X)));
         lateral_range      = range(Y(~isnan(Y)));
 
-        % Fore-aft oscillation frequency — same NaN-safe dominant_freq logic
+        % Fore-aft oscillation frequency: same NaN-safe dominant_freq logic
         % as compute_kinematics.m (all-NaN / zero-variance -> NaN, not a
         % fabricated bin).
         X_filled = fill_nan_local(X);

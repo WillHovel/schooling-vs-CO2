@@ -8,25 +8,25 @@ function FishKinematicsApp()
 %     FORMAT D (dual-camera 2D): columns pt1_cam1_X, pt1_cam1_Y, pt1_cam2_X, ... (cam1=lateral, cam2=ventral)
 %
 %   REQUIRED FILES (must all be on the MATLAB path):
-%     load_fish_points.m          — loads DLC-format CSVs
-%     load_fish_points_named.m    — loads named-column CSVs
-%     transform_fish.m            — rotates midline to body axis
-%     compute_kinematics.m        — FFT interpolation + kinematic metrics
-%     compute_fin_kinematics.m    — fin vector angles, speed, trajectory
+%     load_fish_points.m          : loads DLC-format CSVs
+%     load_fish_points_named.m    : loads named-column CSVs
+%     transform_fish.m            : rotates midline to body axis
+%     compute_kinematics.m        : FFT interpolation + kinematic metrics
+%     compute_fin_kinematics.m    : fin vector angles, speed, trajectory
 %
 %   REQUIRED MATLAB TOOLBOXES:
-%     BASE MATLAB ONLY — no additional toolboxes required (R2019b or later).
+%     BASE MATLAB ONLY: no additional toolboxes required (R2019b or later).
 %
 %     Functions used and their source:
-%       fft / ifft / real         — base MATLAB (no Signal Processing Toolbox needed)
-%       mean(...,'omitnan')       — base MATLAB R2015a+  (replaces nanmean)
-%       std(...,'omitnan')        — base MATLAB R2015a+  (replaces nanstd)
-%       interp1 / polyfit         — base MATLAB
-%       readtable / detectImportOptions — base MATLAB
+%       fft / ifft / real         : base MATLAB (no Signal Processing Toolbox needed)
+%       mean(...,'omitnan')       : base MATLAB R2015a+  (replaces nanmean)
+%       std(...,'omitnan')        : base MATLAB R2015a+  (replaces nanstd)
+%       interp1 / polyfit         : base MATLAB
+%       readtable / detectImportOptions : base MATLAB
 %       uifigure / uiaxes / uitabgroup / uipanel / uilistbox /
 %         uibutton / uilabel / uitextarea / uieditfield /
-%         uidropdown / uicheckbox — base MATLAB (App Building, R2016a+)
-%       atan2d / range / diff     — base MATLAB
+%         uidropdown / uicheckbox : base MATLAB (App Building, R2016a+)
+%       atan2d / range / diff     : base MATLAB
 %
 %     NOT required:
 %       Signal Processing Toolbox  (fft is base MATLAB)
@@ -67,7 +67,7 @@ function FishKinematicsApp()
                    'Position', [60 40 1260 860], ...
                    'Color',    [0.95 0.95 0.95], ...
                    'AutoResizeChildren', 'off');
-    % Minimum usable size — prevents content from collapsing below this
+    % Minimum usable size, prevents content from collapsing below this
     fig.UserData.minW = 800;
     fig.UserData.minH = 560;
 
@@ -84,7 +84,7 @@ function FishKinematicsApp()
                  'BackgroundColor', [1 1 1], 'BorderType', 'line', ...
                  'Title', '', 'Scrollable', 'on');
 
-    y = 1100;   % tall virtual canvas — LP scrolls to show all content
+    y = 1100;   % tall virtual canvas, LP scrolls to show all content
 
     % ---- File ----
     y = section_label(LP, 'INPUT FILE', y);
@@ -118,7 +118,7 @@ function FishKinematicsApp()
         'Value', 0.5, 'Limits', [0 1000]);
     y = y - 42;
 
-    % ---- Flow speed (optional) — through-water speed + Strouhal ----
+    % ---- Flow speed (optional): through-water speed + Strouhal ----
     y = section_label(LP, 'FLOW SPEED (OPTIONAL)', y);
     uilabel(LP, 'Text', 'Flow speed', 'Position', [12 y-24 70 20], 'FontSize', 12);
     app.flowSpeedField = uieditfield(LP, 'numeric', 'Position', [86 y-24 66 26], ...
@@ -152,7 +152,7 @@ function FishKinematicsApp()
         'Text', 'Filter DLC tracking jumps', 'Value', false, ...
         'Tooltip', ['Replaces a point with NaN in any frame where it deviates from its ' ...
                     'own local-median trajectory by more than the threshold fraction of ' ...
-                    'body length — catches a point that briefly teleports to the wrong ' ...
+                    'body length, catches a point that briefly teleports to the wrong ' ...
                     'feature. Applied right after loading, before axis alignment.']);
     app.jumpThreshField = uieditfield(LP, 'numeric', 'Position', [230 y-24 50 22], ...
         'Value', 0.5, 'Limits', [0.05 5], 'Tooltip', 'Threshold, as a fraction of body length');
@@ -204,7 +204,7 @@ function FishKinematicsApp()
     uilabel(app.ptPanel, 'Text', 'Available (check to select)', ...
         'Position', [4 162 160 18], 'FontSize', 10, 'FontWeight', 'bold', 'FontColor', [0.4 0.4 0.4]);
 
-    % Scrollable panel to hold checkboxes — populated dynamically in detectFormat
+    % Scrollable panel to hold checkboxes, populated dynamically in detectFormat
     app.cbScrollPanel = uipanel(app.ptPanel, 'Position', [4 4 130 158], ...
         'BackgroundColor', [0.97 0.97 1], 'BorderType', 'line', 'Scrollable', 'on');
     app.checkboxes = {};   % cell array of uicheckbox handles, filled in detectFormat
@@ -268,7 +268,7 @@ function FishKinematicsApp()
     y = y - 228;
 
     %% ================================================================
-    %  RIGHT PANEL  — Tabbed: Kinematics | Fin Analysis
+    %  RIGHT PANEL: Tabbed: Kinematics | Fin Analysis
     %% ================================================================
     TG_X = MARGIN + LP_W + MARGIN;
     tg = uitabgroup(fig, 'Position', [TG_X MARGIN fw0-TG_X-MARGIN fh0-2*MARGIN]);
@@ -276,7 +276,7 @@ function FishKinematicsApp()
     % ---- Tab 1: Kinematics ----
     tabKine = uitab(tg, 'Title', 'Kinematics');
 
-    % Midline controls bar — anchored to top of kinematics tab
+    % Midline controls bar, anchored to top of kinematics tab
     midCtrlPanel = uipanel(tabKine, 'Units', 'normalized', 'Position', [0 0.935 1 0.065], ...
         'BackgroundColor', [0.93 0.95 1], 'BorderType', 'line', 'Title', '', ...
         'AutoResizeChildren', 'off');
@@ -293,7 +293,7 @@ function FishKinematicsApp()
         'Value', 'parula', ...
         'ValueChangedFcn', @(~,~) refreshMidlines());
 
-    % 2x2 axes on kinematics tab — normalized so they resize with the window
+    % 2x2 axes on kinematics tab, normalized so they resize with the window
     titles_k = {'Midlines (FFT interpolated)', 'Amplitude envelope', ...
                  'Curvature profile',           'Beat frequency spectra'};
     % [left bottom width height] in normalized units (0-1 within tab)
@@ -319,7 +319,7 @@ function FishKinematicsApp()
     % ---- Tab 2: Fin Analysis ----
     tabFin = uitab(tg, 'Title', 'Fin Analysis (3D)');
 
-    % Fin point selector panel — anchored to top of fin tab
+    % Fin point selector panel, anchored to top of fin tab
     finSelPanel = uipanel(tabFin, 'Units', 'normalized', 'Position', [0 0.91 1 0.09], ...
         'BackgroundColor', [0.97 1 0.97], 'BorderType', 'line', 'Title', 'Fin Point Selection', ...
         'AutoResizeChildren', 'off');
@@ -347,7 +347,7 @@ function FishKinematicsApp()
     uibutton(finSelPanel, 'Text', 'Duty Factor', ...
         'Position', [894 16 110 30], 'FontSize', 11, ...
         'BackgroundColor', [0.5 0.2 0.4], 'FontColor', [1 1 1], ...
-        'Tooltip', 'Estimated from fin-tip velocity — a proxy, not a replacement for measured contact time', ...
+        'Tooltip', 'Estimated from fin-tip velocity, a proxy, not a replacement for measured contact time', ...
         'ButtonPushedFcn', @(~,~) onComputeDutyFactor());
 
     % ---- Tab 3: Pectoral Fin Phase (Format D dual-camera) ----
@@ -389,7 +389,7 @@ function FishKinematicsApp()
     text(app.pectAx(2), 0.5, 0.5, 'No data', 'Units','normalized', ...
          'HorizontalAlignment','center','FontSize',12,'Color',[0.75 0.75 0.75]);
 
-    % Fin results text area — wrapped in a normalized uipanel so it resizes
+    % Fin results text area, wrapped in a normalized uipanel so it resizes
     finResultsPanel = uipanel(tabFin, 'Units', 'normalized', ...
         'Position', [0 0.72 1 0.18], ...
         'BorderType', 'none', 'BackgroundColor', [0.97 0.97 0.97], ...
@@ -400,7 +400,7 @@ function FishKinematicsApp()
     finResultsPanel.SizeChangedFcn = @(src,~) set(app.finResultsArea, ...
         'Position', [0 0 max(1,src.Position(3)) max(1,src.Position(4))]);
 
-    % Fin axes: 3 plots — normalized positions
+    % Fin axes: 3 plots, normalized positions
     app.finAx = gobjects(3,1);
     fin_titles = {'Pitch / Roll / Yaw over time', ...
                   'Fin tip distance traveled over time', ...
@@ -432,7 +432,7 @@ function FishKinematicsApp()
          'HorizontalAlignment','center','FontSize',12,'Color',[0.6 0.6 0.6]);
 
     %% ================================================================
-    %  RESIZE  — reflow top-level containers when window changes size
+    %  RESIZE: reflow top-level containers when window changes size
     %% ================================================================
     fig.SizeChangedFcn = @(~,~) onFigResize();
 
@@ -473,7 +473,7 @@ function FishKinematicsApp()
         'BackgroundColor', [0.95 0.95 0.95], 'AutoResizeChildren', 'off');
     uilabel(batchInfoPanel, 'Position', [8 2 1100 32], 'FontSize', 12, ...
         'FontColor', [0.4 0.4 0.6], 'WordWrap', 'on', 'Text', ...
-        ['Process many CSVs of the SAME format in one pass. Loads and computes only — ' ...
+        ['Process many CSVs of the SAME format in one pass. Loads and computes only: ' ...
          'no plots are rendered per file (that would be far too slow for a large batch). ' ...
          'Results stage into the same CSV export you already use, so nothing else changes.']);
 
@@ -498,7 +498,7 @@ function FishKinematicsApp()
     app.batchForce2D = uicheckbox(batchLeftPanel, 'Position', [12 562 356 22], 'FontSize', 10, ...
         'Text', 'Force 2D midline (ignore Z, even if present)', 'Value', true, ...
         'Tooltip', ['Recommended when the batch mixes files that do and don''t have full 3D ' ...
-                    'tracking (e.g. some missing snout Z) — keeps every file in the batch ' ...
+                    'tracking (e.g. some missing snout Z), keeps every file in the batch ' ...
                     'directly comparable instead of some being 2D and some 3D.']);
 
     uilabel(batchLeftPanel, 'Position', [12 530 356 20], 'FontSize', 10, ...
@@ -518,7 +518,7 @@ function FishKinematicsApp()
         'Text', 'Parse {speed} / {bodylength} / {id} from each filename', 'Value', false, ...
         'Tooltip', ['When checked, each file''s name is matched against the pattern below and the ' ...
                     'extracted flow speed (and body length) OVERRIDE the Flow Speed panel for that ' ...
-                    'file — no need to re-run the batch per setting. Files that don''t match fall ' ...
+                    'file, no need to re-run the batch per setting. Files that don''t match fall ' ...
                     'back to the panel values (with a log warning).']);
     app.batchPatternField = uieditfield(batchLeftPanel, 'text', 'Position', [12 382 356 26], ...
         'FontSize', 10, ...
@@ -537,7 +537,7 @@ function FishKinematicsApp()
     uilabel(batchLeftPanel, 'Position', [12 320 356 26], 'FontSize', 9, 'WordWrap', 'on', ...
         'FontColor', [0.5 0.5 0.5], 'Text', ...
         ['FPS, Min Frequency, and Flow speed are taken from the Kinematics tab ' ...
-         '(left panel) — set those first.']);
+         '(left panel), set those first.']);
 
     app.batchRunButton = uibutton(batchLeftPanel, 'Text', 'Run Batch', 'Position', [12 280 160 34], ...
         'FontSize', 12, 'BackgroundColor', [0.2 0.55 0.3], 'FontColor', [1 1 1], ...
@@ -548,7 +548,7 @@ function FishKinematicsApp()
 
     app.batchJumpFilter = uicheckbox(batchLeftPanel, 'Position', [12 222 210 22], 'FontSize', 10, ...
         'Text', 'Filter DLC tracking jumps', 'Value', false, ...
-        'Tooltip', 'Same as the Kinematics tab checkbox — applied to every file in the batch.');
+        'Tooltip', 'Same as the Kinematics tab checkbox, applied to every file in the batch.');
     app.batchJumpThreshField = uieditfield(batchLeftPanel, 'numeric', 'Position', [228 222 50 22], ...
         'Value', 0.5, 'Limits', [0.05 5]);
     uilabel(batchLeftPanel, 'Position', [282 222 44 22], 'FontSize', 10, 'FontColor', [0.5 0.5 0.5], ...
@@ -575,7 +575,7 @@ function FishKinematicsApp()
         'FontColor', [0.4 0.4 0.6], 'WordWrap', 'on', 'Text', ...
         ['Group-level metrics across ALL fish in one multi-animal file (native DLC multi-animal ' ...
          'exports or Fish1_P1_x, Fish2_P1_x, ... columns). These use RAW (untransformed) ' ...
-         'coordinates on purpose — school-level angle and distance only make sense in one shared ' ...
+         'coordinates on purpose, school-level angle and distance only make sense in one shared ' ...
          'coordinate frame, not each fish''s own private one.']);
 
     schoolLeftPanel = uipanel(app.tabSchool, 'Units', 'normalized', 'Position', [0 0 0.32 0.93], ...
@@ -653,7 +653,7 @@ function FishKinematicsApp()
             app.fileField.Value = fullpath;
             detectFormat(fullpath);
         else
-            % Multiple files — assume CURVES format
+            % Multiple files, assume CURVES format
             app.fmt = 'curves';
             % Store all paths as semicolon-separated in fileField
             paths = cellfun(@(f) fullfile(fp_, f), fn, 'UniformOutput', false);
@@ -662,13 +662,13 @@ function FishKinematicsApp()
             app.fmtLabel.Text = sprintf('Format E: CURVES midline  (%d files selected)', n_fish);
             app.ptPanel.Visible = 'off';
             app.axMapPanel.Visible = 'off';
-            app.finRootDrop.Items = {'N/A — 2D CURVES format'};
-            app.finTipDrop.Items  = {'N/A — 2D CURVES format'};
+            app.finRootDrop.Items = {'N/A, 2D CURVES format'};
+            app.finTipDrop.Items  = {'N/A, 2D CURVES format'};
         end
     end
 
     function detectFormat(path)
-        % FORMAT A (native DLC multi-animal): probe row 2 col 1 directly —
+        % FORMAT A (native DLC multi-animal): probe row 2 col 1 directly,
         % only this 4-row-header format has the literal 'individuals' label
         % there. Do this BEFORE readtable: detectImportOptions auto-types
         % column 1 as numeric (frame indices) and readtable would coerce
@@ -683,8 +683,8 @@ function FishKinematicsApp()
             app.fmtLabel.Text = sprintf('Format A: DLC multi-animal  (%d individuals)', numel(inds));
             app.ptPanel.Visible = 'off';
             app.axMapPanel.Visible = 'off';
-            app.finRootDrop.Items = {'N/A — DLC multi-animal'};
-            app.finTipDrop.Items  = {'N/A — DLC multi-animal'};
+            app.finRootDrop.Items = {'N/A, DLC multi-animal'};
+            app.finTipDrop.Items  = {'N/A, DLC multi-animal'};
             return;
         end
 
@@ -704,7 +704,7 @@ function FishKinematicsApp()
             end
         end
 
-        % FORMAT E: CURVES — first col name is a number (body station in mm), second is blank/auto-named.
+        % FORMAT E: CURVES, first col name is a number (body station in mm), second is blank/auto-named.
         % With VariableNamingRule='preserve', MATLAB names empty CSV columns as 'Var2','Var4',... 
         % (not 'Unnamed...'), so we must accept both patterns.
         is_col2_filler = numel(cols) > 1 && ( ...
@@ -717,24 +717,24 @@ function FishKinematicsApp()
             app.fmt = 'curves';
             app.fmtLabel.Text = sprintf('Format E: CURVES midline  (%d body stations, pre-transformed X/Y in BL)', numel(num_cols));
             app.ptPanel.Visible = 'off';
-            showAxisPanel(false);   % 2D pre-transformed — axis mapping not applicable
-            app.finRootDrop.Items = {'N/A — 2D CURVES format'};
-            app.finTipDrop.Items  = {'N/A — 2D CURVES format'};
+            showAxisPanel(false);   % 2D pre-transformed, axis mapping not applicable
+            app.finRootDrop.Items = {'N/A, 2D CURVES format'};
+            app.finTipDrop.Items  = {'N/A, 2D CURVES format'};
             return;
         end
 
-        % FORMAT D: pt<N>_cam<M>_X — dual-camera 2D
+        % FORMAT D: pt<N>_cam<M>_X, dual-camera 2D
         if any(~cellfun(@isempty, regexp(cols, '^pt\d+_cam\d+_[XxYy]$')))
             app.fmt = 'dual_camera';
             app.fmtLabel.Text = 'Format D: Dual-camera 2D  (pt1_cam1_X ... | cam1=lateral, cam2=ventral)';
             app.ptPanel.Visible = 'off';
             showAxisPanel(false);   % 2D only
-            app.finRootDrop.Items = {'N/A — 2D dual-camera format'};
-            app.finTipDrop.Items  = {'N/A — 2D dual-camera format'};
+            app.finRootDrop.Items = {'N/A, 2D dual-camera format'};
+            app.finTipDrop.Items  = {'N/A, 2D dual-camera format'};
             return;
         end
 
-        % FORMAT C: pt<N>_X — numbered 3D or 2D points
+        % FORMAT C: pt<N>_X, numbered 3D or 2D points
         if any(~cellfun(@isempty, regexp(cols, '^pt\d+_[XxYyZz]$')))
             app.fmt = 'numbered';
             has_z_c = any(~cellfun(@isempty, regexp(cols, '^pt\d+_[Zz]$')));
@@ -781,8 +781,8 @@ function FishKinematicsApp()
             app.fmtLabel.Text = 'Format A: DLC  (Fish1_P1_x columns)';
             app.ptPanel.Visible = 'off';
             showAxisPanel(has_z_dlc);
-            app.finRootDrop.Items = {'N/A — use named format'};
-            app.finTipDrop.Items  = {'N/A — use named format'};
+            app.finRootDrop.Items = {'N/A, use named format'};
+            app.finTipDrop.Items  = {'N/A, use named format'};
         else
             % FORMAT B: named columns
             has_z_b = any(~cellfun(@isempty, regexp(cols, '^.+_[Zz]$')));
@@ -832,7 +832,7 @@ function FishKinematicsApp()
     end
 
     % ---- Return names of currently checked points ----
-    % Prefers UserData (raw column name, e.g. 'pt3') when set — used for
+    % Prefers UserData (raw column name, e.g. 'pt3') when set, used for
     % Format C where the visible label includes the anatomical name.
     function sel = getCheckedPoints()
         sel = {};
@@ -997,7 +997,7 @@ function FishKinematicsApp()
                     % Format C: if the user picked >= 3 midline points in
                     % the Point Selection panel, load those in order
                     % (first = head, last = tail). Otherwise fall back to
-                    % ALL points in file order — the first/last numbered
+                    % ALL points in file order, the first/last numbered
                     % points are fin/eye landmarks, not the true head and
                     % tail, so body length, speed, and stride will be
                     % wrong (see onFishSelected's auto-BL readout to
@@ -1006,7 +1006,7 @@ function FishKinematicsApp()
                         app.fp = load_fish_points_named(csvPath, app.sel_order, []);
                         app.fp = app.fp(1);
                     else
-                        uialert(fig, [ 'No midline points selected for this Format C file — ' ...
+                        uialert(fig, [ 'No midline points selected for this Format C file, ' ...
                             'using ALL points in file order (first as head, last as tail). ' ...
                             'Body length / speed / stride will be wrong unless those happen ' ...
                             'to be the true head and tail. Tip: select 3+ midline points in ' ...
@@ -1016,7 +1016,7 @@ function FishKinematicsApp()
                     end
 
                 case 'curves'
-                    % Format E: CURVES — one file per fish, may be multi-selected
+                    % Format E: CURVES, one file per fish, may be multi-selected
                     paths = strsplit(csvPath, ';');
                     fp_arr = load_fish_curves(strtrim(paths{1}));
                     for k_idx = 2:numel(paths)
@@ -1035,7 +1035,7 @@ function FishKinematicsApp()
                     % Fall through to transform + kinematics below
 
                 otherwise
-                    uialert(fig, 'Unknown format — browse a file first.', 'Format'); return
+                    uialert(fig, 'Unknown format, browse a file first.', 'Format'); return
             end
         catch ME; logFullError(ME); uialert(fig, ME.message, 'Load error'); setStatus('Load failed.'); return; end
 
@@ -1051,7 +1051,7 @@ function FishKinematicsApp()
         end
 
         % DLC multi-animal: stash the RAW (pre-transform) struct array for
-        % the School Metrics tab — group metrics need one shared coordinate
+        % the School Metrics tab, group metrics need one shared coordinate
         % frame, which transform_fish deliberately breaks up per fish.
         if strcmp(app.fmt, 'dlc_multianimal')
             app.school_fp = app.fp;
@@ -1078,19 +1078,19 @@ function FishKinematicsApp()
         setStatus('Computing extended body metrics...');
         try
             % roll_pair is not wired into the GUI yet (needs a separate
-            % left/right landmark pair, not just head/mid/tail) — roll
+            % left/right landmark pair, not just head/mid/tail), roll
             % will show as N/A in results/CSV until that's added. Call
             % compute_body_extended directly with a roll_pair argument if
             % you need roll for a specific analysis outside the GUI.
             flow_bl_s = get_flow_BL_s();
             if isnan(flow_bl_s)
-                setStatus(['Flow speed set but body length missing — ' ...
+                setStatus(['Flow speed set but body length missing, ' ...
                            'through-water speed skipped (ground speed only).']);
                 flow_bl_s = 0;
             end
             app.ext = compute_body_extended(app.fp, fps, app.kine, {}, flow_bl_s);
         catch ME
-            % Don't hard-fail the whole run over this — kinematics above
+            % Don't hard-fail the whole run over this, kinematics above
             % already succeeded and is more important to preserve.
             logFullError(ME);
             warning(ME.identifier, 'compute_body_extended failed: %s', ME.message);
@@ -1217,7 +1217,7 @@ function FishKinematicsApp()
                     L{end+1} = sprintf('Roll:               %.2f \xB1 %.2f deg (range %.2f)', ...
                                         e.mean_roll_deg, e.std_roll_deg, e.range_roll_deg);
                 else
-                    L{end+1} = 'Roll:               N/A (needs a left/right point pair — not yet wired into GUI)';
+                    L{end+1} = 'Roll:               N/A (needs a left/right point pair, not yet wired into GUI)';
                 end
             else
                 L{end+1} = 'Head elevation:     N/A (needs 3D data)';
@@ -1256,7 +1256,7 @@ function FishKinematicsApp()
         hold(app.ax(3),'off'); xlim(app.ax(3),[0 1]);
 
         % -- Plot 4: FFT spectra --
-        % NOTE: Unclean FFT spectra are expected — they reflect real broadband
+        % NOTE: Unclean FFT spectra are expected: they reflect real broadband
         % signal content in the time series (e.g. non-sinusoidal waveforms,
         % aperiodic motion, NaN-gap interpolation artefacts). This is a data
         % characteristic, not a coding bug. The dominant_freq() function uses
@@ -1335,7 +1335,7 @@ function FishKinematicsApp()
         cb.FontSize = 8;
         clim(app.ax(1), [valid(idx_show(1)), valid(idx_show(end))]);
 
-        % X axis: fixed 0 (head) to 1 (tail) in BL — fish is stationary so
+        % X axis: fixed 0 (head) to 1 (tail) in BL: fish is stationary so
         % body length is normalized. Slight padding reveals head/tail markers.
         xlim(app.ax(1), [-0.05, 1.10]);
 
@@ -1367,7 +1367,7 @@ function FishKinematicsApp()
 
         nSkipped = sum(any(isnan(k.Y_interp), 2));
         title(app.ax(1), ...
-            sprintf(['Body-axis midlines  —  fish stationary, swimming against flow\n' ...
+            sprintf(['Body-axis midlines: fish stationary, swimming against flow\n' ...
                      'n = %d frames shown, %d skipped (occluded)  |  ' ...
                      'color = time progression'], ...
                     numel(idx_show), nSkipped), ...
@@ -1409,9 +1409,9 @@ function FishKinematicsApp()
         fps     = app.fpsField.Value;
         minFreq = app.minFreqField.Value;
 
-        % Body speed for stride length — from the currently selected fish's
+        % Body speed for stride length, from the currently selected fish's
         % extended metrics, if available. NaN if not computed (e.g. run
-        % failed) — compute_fin_kinematics handles NaN body speed cleanly
+        % failed), compute_fin_kinematics handles NaN body speed cleanly
         % (stride_length_BL just comes back NaN too).
         bodySpeed = NaN;
         if ~isempty(app.ext) && ~isempty(app.kine) && ~isempty(app.fishList.Items)
@@ -1448,11 +1448,11 @@ function FishKinematicsApp()
         R{end+1} = sprintf('Mean tip speed:      %.4f /s  (SD %.4f  peak %.4f)', ...
                             fd.mean_speed, fd.std_speed, fd.peak_speed);
         R{end+1} = repmat('-',1,60);
-        R{end+1} = sprintf('Yaw   — mean: %7.2f deg   SD: %6.2f   range: %.2f', ...
+        R{end+1} = sprintf('Yaw   : mean: %7.2f deg   SD: %6.2f   range: %.2f', ...
                             fd.mean_yaw,   fd.std_yaw,   fd.range_yaw);
-        R{end+1} = sprintf('Pitch — mean: %7.2f deg   SD: %6.2f   range: %.2f', ...
+        R{end+1} = sprintf('Pitch : mean: %7.2f deg   SD: %6.2f   range: %.2f', ...
                             fd.mean_pitch, fd.std_pitch, fd.range_pitch);
-        R{end+1} = sprintf('Roll  — mean: %7.2f deg   SD: %6.2f   range: %.2f', ...
+        R{end+1} = sprintf('Roll  : mean: %7.2f deg   SD: %6.2f   range: %.2f', ...
                             fd.mean_roll,  fd.std_roll,  fd.range_roll);
         R{end+1} = '  (Roll = atan2(vz,vy): fin cant in body cross-section plane)';
         R{end+1} = repmat('-',1,60);
@@ -1466,7 +1466,7 @@ function FishKinematicsApp()
         R{end+1} = sprintf('Stride length:         %s BL/cycle', fmt_nan(fd.stride_length_BL));
         R{end+1} = sprintf('Stride duration:       %s s', fmt_nan(fd.stride_duration_s));
         if isnan(fd.stride_length_BL) && ~isnan(fd.fin_freq_Hz)
-            R{end+1} = '  (stride length needs body speed — run main kinematics first)';
+            R{end+1} = '  (stride length needs body speed, run main kinematics first)';
         end
         app.finResultsArea.Value = R;
 
@@ -1488,7 +1488,7 @@ function FishKinematicsApp()
         xlabel(app.finAx(2),'Frame'); ylabel(app.finAx(2),'Cumulative distance');
         title(app.finAx(2), sprintf('Tip distance (total = %.3f)', fd.total_dist), 'FontSize',10);
 
-        % ---- Plot 3: Tip trajectory in XY — connected line colored by frame ----
+        % ---- Plot 3: Tip trajectory in XY, connected line colored by frame ----
         cla(app.finAx(3));
         tv    = fd.tip_xyz(valid,:);
         fv    = frames(valid);
@@ -1557,7 +1557,7 @@ function FishKinematicsApp()
             uialert(fig, 'Named or numbered 3D format required.', 'Format'); return
         end
         if ~isfield(app.fp, 'transform_params')
-            uialert(fig, ['This fish_points struct has no transform_params — re-run ' ...
+            uialert(fig, ['This fish_points struct has no transform_params, re-run ' ...
                            'Load & Analyse with the updated transform_fish.m first.'], 'Missing data');
             return
         end
@@ -1594,7 +1594,7 @@ function FishKinematicsApp()
         R{end+1} = sprintf('  Lateral range:                 %s BL', fmt_nan(gd.lateral_range_BL));
         R{end+1} = sprintf('  Girdle oscillation freq:        %s Hz', fmt_nan(gd.girdle_freq_Hz));
         if gd.pct_valid < 50
-            R{end+1} = '  (LOW COVERAGE — treat as a rough estimate)';
+            R{end+1} = '  (LOW COVERAGE, treat as a rough estimate)';
         end
         app.finResultsArea.Value = R;
     end
@@ -1623,14 +1623,14 @@ function FishKinematicsApp()
         R{end+1} = sprintf('DUTY FACTOR (velocity-threshold proxy, %s\x2192%s):', ...
                             app.fin_data.rootName, app.fin_data.tipName);
         R{end+1} = '  NOTE: this is a kinematic ESTIMATE, not a substitute for measured';
-        R{end+1} = '  contact time/duty factor — treat measured data as ground truth.';
+        R{end+1} = '  contact time/duty factor, treat measured data as ground truth.';
         R{end+1} = sprintf('  Coverage:        %.1f%% frames usable', st.pct_valid_consecutive);
         R{end+1} = sprintf('  Contact time:    %s s', fmt_nan(st.mean_contact_time_s));
         R{end+1} = sprintf('  Swing time:      %s s', fmt_nan(st.mean_swing_time_s));
         R{end+1} = sprintf('  Duty factor:     %s', fmt_nan(st.duty_factor));
         R{end+1} = sprintf('  Cycles detected: %d', st.n_cycles);
         if st.pct_valid_consecutive < 70
-            R{end+1} = '  *** LOW COVERAGE WARNING — verify against measured contact-time data ***';
+            R{end+1} = '  *** LOW COVERAGE WARNING, verify against measured contact-time data ***';
         end
         app.finResultsArea.Value = R;
     end
@@ -1647,7 +1647,7 @@ function FishKinematicsApp()
             app.schoolPeduncleDrop.Value = fp(1).point_names{end};
         end
         if numel(fp) < 2
-            app.schoolLoadedLabel.Text = sprintf(['Loaded, but only %d fish found — School Metrics ' ...
+            app.schoolLoadedLabel.Text = sprintf(['Loaded, but only %d fish found, School Metrics ' ...
                 'needs multiple fish.'], numel(fp));
             app.schoolLoadedLabel.FontColor = [0.8 0.3 0.1];
         else
@@ -1667,7 +1667,7 @@ function FishKinematicsApp()
         setStatus('Loading multi-fish file...');
         try
             % Auto-detect format: a native DLC multi-animal export has the
-            % literal word "individuals" as the first cell of row 2 — a
+            % literal word "individuals" as the first cell of row 2, a
             % totally different 4-row header structure than the older
             % Fish1_P1_x flattened convention load_fish_points() expects.
             probe = readcell(fullPath, 'Range', 'A2:A2');
@@ -1684,7 +1684,7 @@ function FishKinematicsApp()
         end
 
         if numel(fp) < 2
-            app.schoolLoadedLabel.Text = sprintf(['Loaded, but only %d fish found — School Metrics ' ...
+            app.schoolLoadedLabel.Text = sprintf(['Loaded, but only %d fish found, School Metrics ' ...
                 'needs multiple fish (Fish1_P1_x, Fish2_P1_x, ... columns).'], numel(fp));
             app.schoolLoadedLabel.FontColor = [0.8 0.3 0.1];
         else
@@ -1774,7 +1774,7 @@ function FishKinematicsApp()
         end
         collect_distance_row(dist, snoutName, cmPerUnit, numel(fp));
 
-        setStatus(sprintf('School metrics done. %d row(s) staged — use Export CSV.', numel(app.csv_rows)));
+        setStatus(sprintf('School metrics done. %d row(s) staged, use Export CSV.', numel(app.csv_rows)));
     end
 
     function s = fname_only(p)
@@ -1819,7 +1819,7 @@ function FishKinematicsApp()
         rootName = app.finRootDrop.Value;
         tipName  = app.finTipDrop.Value;
         if (runFin || runGirdle) && (contains(rootName,'N/A') || contains(rootName,'load file'))
-            uialert(fig, ['Root/Tip points look unset — go to the Fin Analysis tab, load any ' ...
+            uialert(fig, ['Root/Tip points look unset, go to the Fin Analysis tab, load any ' ...
                            'one file from this batch to populate the dropdowns, then come back ' ...
                            'and run the batch.'], 'Fin points not set');
             return
@@ -1839,12 +1839,12 @@ function FishKinematicsApp()
 
             try
                 % ---- Guard: DLC multi-animal exports are not single-fish
-                % files — skip with a clear log line rather than failing
+                % files, skip with a clear log line rather than failing
                 % inside the named-points loader below. ----
                 probe = readcell(f, 'Range', 'A2:A2');
                 if ~isempty(probe) && (ischar(probe{1}) || isstring(probe{1})) ...
                         && strcmpi(strtrim(string(probe{1})), 'individuals')
-                    appendBatchLog(sprintf(['[%d/%d] %s: SKIPPED — DLC multi-animal export; ' ...
+                    appendBatchLog(sprintf(['[%d/%d] %s: SKIPPED, DLC multi-animal export; ' ...
                         'use the School Metrics tab for files like this.'], i, n, fname), n);
                     nFail = nFail + 1;
                     continue;
@@ -1872,17 +1872,17 @@ function FishKinematicsApp()
                     pat = strtrim(app.batchPatternField.Value);
                     if isempty(pat)
                         appendBatchLog(sprintf(['[%d/%d] %s: filename parsing enabled but no pattern ' ...
-                            'typed — using Flow Speed panel values.'], i, n, fname), n);
+                            'typed, using Flow Speed panel values.'], i, n, fname), n);
                         flow_bl_s = get_flow_BL_s();
                     elseif ~contains(pat, '{speed}')
-                        appendBatchLog(sprintf(['[%d/%d] %s: pattern has no {speed} token — using ' ...
+                        appendBatchLog(sprintf(['[%d/%d] %s: pattern has no {speed} token, using ' ...
                             'Flow Speed panel values.'], i, n, fname), n);
                         flow_bl_s = get_flow_BL_s();
                     else
                         parsed = parse_filename_tokens(fname, pat);
                         if isempty(parsed)
                             appendBatchLog(sprintf(['[%d/%d] %s: filename does NOT match pattern ' ...
-                                '"%s" — using Flow Speed panel values.'], i, n, fname, pat), n);
+                                '"%s", using Flow Speed panel values.'], i, n, fname, pat), n);
                             flow_bl_s = get_flow_BL_s();
                         else
                             app.fname_parse = parsed;
@@ -1897,7 +1897,7 @@ function FishKinematicsApp()
                                 if isempty(blv) || ~isfinite(blv) || ~(blv > 0)
                                     appendBatchLog(sprintf(['[%d/%d] %s: parsed speed %g %s but no body ' ...
                                         'length to convert (no {bodylength} token and panel body length ' ...
-                                        'unset) — through-water speed skipped.'], ...
+                                        'unset), through-water speed skipped.'], ...
                                         i, n, fname, spd, app.flowUnitsDrop.Value), n);
                                     flow_bl_s = 0;
                                 else
@@ -1918,7 +1918,7 @@ function FishKinematicsApp()
                     flow_bl_s = get_flow_BL_s();
                 end
                 if isnan(flow_bl_s)
-                    appendBatchLog(sprintf(['[%d/%d] %s: flow speed set but body length missing — ' ...
+                    appendBatchLog(sprintf(['[%d/%d] %s: flow speed set but body length missing, ' ...
                         'through-water speed skipped.'], i, n, fname), n);
                     flow_bl_s = 0;
                 end
@@ -1926,7 +1926,7 @@ function FishKinematicsApp()
 
                 % ---- Populate app state so the EXISTING collectors can be
                 % reused as-is (they read app.fp/app.kine/app.ext/app.fileField/
-                % app.fishList — none of which trigger any plotting when set
+                % app.fishList, none of which trigger any plotting when set
                 % programmatically like this). ----
                 app.fp   = fp;
                 app.kine = kine;
@@ -1938,7 +1938,7 @@ function FishKinematicsApp()
 
                 collect_kine_rows();
                 % Auto-detected body length (median over frames, csv units)
-                % — sanity check: compare with your known fish length. A
+                % Sanity check: compare with your known fish length. A
                 % value ~10x too small means the selected midline points
                 % don't span the true head-to-tail distance.
                 bl_auto = NaN;
@@ -1985,7 +1985,7 @@ function FishKinematicsApp()
                 nOK = nOK + 1;
             catch ME
                 logFullError(ME);   % full trace still goes to command window
-                logLine = sprintf('[%d/%d] %s: FAILED — %s', i, n, fname, ME.message);
+                logLine = sprintf('[%d/%d] %s: FAILED: %s', i, n, fname, ME.message);
                 nFail = nFail + 1;
             end
 
@@ -1995,7 +1995,7 @@ function FishKinematicsApp()
         end
 
         app.batchProgressLabel.Text = sprintf('Done: %d OK, %d failed (of %d)', nOK, nFail, n);
-        setStatus(sprintf('Batch complete: %d OK, %d failed. %d row(s) staged — use Export CSV.', ...
+        setStatus(sprintf('Batch complete: %d OK, %d failed. %d row(s) staged, use Export CSV.', ...
                            nOK, nFail, numel(app.csv_rows)));
         appendBatchLog(repmat('=',1,50), n);
         appendBatchLog(sprintf('DONE: %d OK, %d failed. %d row(s) staged for export.', ...
@@ -2052,7 +2052,7 @@ function FishKinematicsApp()
             'Units','pixels', 'Position',[490 11 30 18], ...
             'BackgroundColor',[0.05 0.05 0.1], 'ForegroundColor',[0.6 0.6 0.6],'FontSize',9);
 
-        % Axes — leave room for control bar
+        % Axes, leave room for control bar
         ax_anim = axes(animFig, ...
             'Units','pixels', 'Position',[60 55 800 660], ...
             'Color',  [0.05 0.05 0.1], ...
@@ -2216,7 +2216,7 @@ function FishKinematicsApp()
         % Strip signs to get base axes
         bx = tx(2); by = ty(2); bz = tz(2);
         if numel(unique({bx,by,bz})) < 3
-            app.axWarnLabel.Text = sprintf('Warning: duplicate axes (%s,%s,%s) — mapping invalid', bx,by,bz);
+            app.axWarnLabel.Text = sprintf('Warning: duplicate axes (%s,%s,%s), mapping invalid', bx,by,bz);
             app.axWarnLabel.FontColor = [0.75 0.2 0.1];
         else
             app.axWarnLabel.Text = sprintf('OK: CSV %s→topX  %s→topY  %s→vert', tx, ty, tz);
@@ -2240,12 +2240,12 @@ function FishKinematicsApp()
         col_y = ax2col.(ty(2));  sgn_y = 2*strcmp(ty(1),'+')-1;
         col_z = ax2col.(tz(2));  sgn_z = 2*strcmp(tz(1),'+')-1;
 
-        % Identity check — skip if default (+X,+Y,+Z)
+        % Identity check, skip if default (+X,+Y,+Z)
         is_identity = (col_x==1 && sgn_x==1) && (col_y==2 && sgn_y==1) && (col_z==3 && sgn_z==1);
 
         for fi = 1:numel(fp)
             if isfield(fp(fi),'pre_transformed') && fp(fi).pre_transformed
-                continue;   % CURVES data already in body frame — skip
+                continue;   % CURVES data already in body frame, skip
             end
             nDims = size(fp(fi).points, 3);
             if nDims < 3
@@ -2543,7 +2543,7 @@ function FishKinematicsApp()
         r.stance_duty_factor         = st.duty_factor;
         r.stance_n_cycles            = st.n_cycles;
         r.stance_pct_valid_consecutive = st.pct_valid_consecutive;
-        r.stance_is_estimate_not_measured = 'TRUE';   % explicit flag — never confuse with real contact-time data (string, not logical — write_csv_rows only recognizes char/string/numeric)
+        r.stance_is_estimate_not_measured = 'TRUE';   % explicit flag, never confuse with real contact-time data (string, not logical, write_csv_rows only recognizes char/string/numeric)
 
         r.row_type = 'stance_swing_estimate';
 
@@ -2793,7 +2793,7 @@ function FishKinematicsApp()
     % Display NaN plainly rather than a formatted-looking "NaN" number,
     % consistent with the NaN-propagation convention used throughout the
     % underlying compute_* functions (see prior fixes to compute_kinematics,
-    % compute_fin_kinematics, etc. — NaN should always read as NaN, never
+    % compute_fin_kinematics, etc.: NaN should always read as NaN, never
     % be silently formatted to look like a real value).
         if isnan(v), s = 'NaN'; else, s = sprintf('%.4f', v); end
     end
@@ -2832,9 +2832,9 @@ function FishKinematicsApp()
     % Match a filename (WITHOUT the .csv extension) against the user's
     % naming pattern and pull out the {speed}/{bodylength}/{id} values.
     %   pat    e.g. 'WSBS_*_{speed}BL*_{id}xyzpts'  (* = any text, possibly
-    %          empty — so BL* absorbs an optional ".1" trial tag before _)
+    %          empty, so BL* absorbs an optional ".1" trial tag before _)
     %   parsed struct with .id (char), .speed, .bodylength (numeric; NaN
-    %          where no token of that type exists) — or [] if the name does
+    %          where no token of that type exists), or [] if the name does
     %          not match the pattern.
         parsed = [];
         pat = strtrim(pat);
@@ -2880,7 +2880,7 @@ function FishKinematicsApp()
     % is often too short to actually locate a bug (e.g. MATLAB's generic
     % "Unable to perform assignment because the left and right sides have
     % a different number of elements" gives zero indication of WHICH line
-    % triggered it). This makes every error in the app self-diagnosing —
+    % triggered it). This makes every error in the app self-diagnosing,
     % check the command window after any error dialog for the real trace.
         fprintf(2, '\n========== FULL ERROR REPORT ==========\n');
         fprintf(2, '%s\n', getReport(ME, 'extended', 'hyperlinks', 'off'));

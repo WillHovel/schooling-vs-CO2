@@ -7,17 +7,17 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
 %   ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_s)
 %
 %   INPUTS
-%     fish_points - struct from transform_fish() — must have .points
+%     fish_points - struct from transform_fish(), must have .points
 %                   (raw, untransformed coords), .X/.Y[/.Z], and
 %                   .transform_params (added by the updated transform_fish).
 %     fps         - frames per second.
 %     kine        - output of compute_kinematics(fish_points, fps, min_freq)
-%                   for the SAME fish — used to get tail_TBF for stride
+%                   for the SAME fish, used to get tail_TBF for stride
 %                   length and Strouhal. Pass [] to skip stride length.
 %     roll_pair   - OPTIONAL 1x2 cell of point_names, e.g.
 %                   {'LPectBase','RPectBase'}, giving a left/right pair
 %                   used to estimate roll. Roll cannot be computed from a
-%                   single midline — it needs two laterally-symmetric
+%                   single midline; it needs two laterally-symmetric
 %                   points to tell which way "up" tilts. If omitted or
 %                   the named points aren't found, .roll_deg is NaN and
 %                   .roll_available is false.
@@ -28,15 +28,15 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
 %                         through-water speed = |ground speed - |flow||)
 %                    0 or omitted = no flow correction (ground speed only).
 %                   This must be converted to BL/s by the CALLER (flow in
-%                   cm/s divided by body length in cm, etc.) — this
+%                   cm/s divided by body length in cm, etc.), this
 %                   function works entirely in BL units.
 %
-%   OUTPUT  ext — struct (one per animal) with fields:
+%   OUTPUT  ext: struct (one per animal) with fields:
 %
 %   --- Body angle (heading in the raw/world coordinate frame) ---
 %     .body_angle_deg      [nFrames x 1]  per-frame swim-axis angle (deg),
 %                           i.e. how the fish's own heading changes over
-%                           time relative to the camera/world frame — NOT
+%                           time relative to the camera/world frame, NOT
 %                           the same as lateral undulation; this is the
 %                           slope of the fitted body axis before rotation.
 %                           Continuous mod-180-unwrapped heading series
@@ -49,7 +49,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
 %   --- Speed ---
 %     .speed_BL_s           [nFrames x 1]  forward speed of the body
 %                            centroid, in body-lengths/second (BL/s is the
-%                            standard unit in swimming kinematics — avoids
+%                            standard unit in swimming kinematics, avoids
 %                            needing absolute camera calibration).
 %     .mean_speed_BL_s / .std_speed_BL_s / .peak_speed_BL_s
 %
@@ -60,7 +60,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
 %                                  flow (see flow_BL_s sign convention above)
 %     .mean_speed_through_water_BL_s / .std_... / .peak_...
 %     .tail_amp_pp_BL        peak-to-peak trailing-edge (tail point) lateral
-%                             excursion in BL = 2*sqrt(2)*std(tail Y) — the
+%                             excursion in BL = 2*sqrt(2)*std(tail Y), the
 %                             standard sinusoid amplitude estimator
 %     .strouhal               St = tail_TBF * tail_amp_pp_BL / U, where
 %                             U = mean through-water speed if flow is set,
@@ -75,14 +75,14 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
 %
 %   --- Head elevation ---
 %     .head_pitch_deg        [nFrames x 1]  angle of the head-to-next-point
-%                             vector relative to horizontal (deg) — this is
+%                             vector relative to horizontal (deg), this is
 %                             what most kinematics papers mean by "head
 %                             elevation angle." Only computed if 3-D data
 %                             (has_z) is available.
 %     .mean_head_pitch_deg / .std_head_pitch_deg / .range_head_pitch_deg
 %     .head_Z_raw             [nFrames x 1]  raw vertical (Z) position of
 %                              the head point, relative to its own first
-%                              valid frame — a simpler "is it swimming up
+%                              valid frame, a simpler "is it swimming up
 %                              or down in the water column" trace.
 %
 %   --- Roll (only if roll_pair given and both points found) ---
@@ -103,7 +103,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         has_z   = isfield(fish_points(fi),'has_z') && fish_points(fi).has_z;
         middle_idx = 2:nPoints-1;
         % Same degenerate-fit guard as transform_fish: with a single
-        % middle point, polyfit returns the meaningless slope y/x — fall
+        % middle point, polyfit returns the meaningless slope y/x, fall
         % back to the head-to-tail chord (endpoints) instead.
         if numel(middle_idx) >= 2
             fit_idx = middle_idx;
@@ -112,13 +112,13 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         end
 
         % ================================================================
-        % 1. BODY ANGLE — recompute the same middle-point line fit
+        % 1. BODY ANGLE: recompute the same middle-point line fit
         %    transform_fish uses, but report the angle itself instead of
         %    using it to rotate. This is the fish's heading in the raw
         %    (world/camera) coordinate frame.
         %
         %    CHANGE NOTE (bug fix): atand() returns a line ORIENTATION in
-        %    (-90, 90] — angles differing by 180 deg are the same line. A
+        %    (-90, 90], angles differing by 180 deg are the same line. A
         %    fish that slowly turns past +/-90 deg used to produce a fake
         %    ~180 deg jump in the per-frame trace (and garbage mean/std/
         %    range/angular-velocity). Now the trace is unwrapped mod 180
@@ -171,13 +171,13 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         end
 
         % ================================================================
-        % 2. SPEED — frame-to-frame displacement of the body centroid, in
+        % 2. SPEED: frame-to-frame displacement of the body centroid, in
         %    raw units, converted to BL/s using this frame's raw body
         %    length (bl_per_frame, from transform_fish).
         %
         %    CHANGE NOTE (bug fix): pre-transformed data (CURVES, Format E)
         %    never gets a .bl_per_frame field because transform_fish skips
-        %    it — this used to throw "Unrecognized field name" and take
+        %    it; this used to throw "Unrecognized field name" and take
         %    down the whole run. Such data is ALREADY in BL units (X from
         %    0=head to ~1=tail), so the per-frame body length is exactly 1
         %    and speed is simply centroid displacement x fps.
@@ -189,7 +189,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         elseif isfield(fish_points(fi), 'bl_per_frame') && ~isempty(fish_points(fi).bl_per_frame)
             bl_pf = fish_points(fi).bl_per_frame;   % [nFrames x 1], raw units
         else
-            warning(['compute_body_extended: %s has no bl_per_frame — speed/stride ' ...
+            warning(['compute_body_extended: %s has no bl_per_frame: speed/stride ' ...
                      'will be NaN. Run transform_fish on this animal first.'], ...
                      fish_points(fi).name);
             bl_pf = NaN(nFrames, 1);
@@ -217,13 +217,13 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         end
 
         % ================================================================
-        % 2b. THROUGH-WATER SPEED — ground speed corrected by a known
+        % 2b. THROUGH-WATER SPEED: ground speed corrected by a known
         %     tank/flume flow. Sign convention (documented above):
         %       flow > 0  (against fish):  U_tw = U_ground + flow
         %       flow < 0  (with fish):     U_tw = |U_ground - |flow||
         %     ground speed here is a MAGNITUDE (centroid distance per
         %     second), so this assumes the fish's path is aligned with the
-        %     flow axis — the standard flume station-holding assumption.
+        %     flow axis, the standard flume station-holding assumption.
         % ================================================================
         if isfinite(flow_BL_s) && flow_BL_s > 0
             speed_tw_BL_s = speed_BL_s + flow_BL_s;
@@ -246,7 +246,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         end
 
         % ================================================================
-        % 3. STRIDE LENGTH — mean forward distance traveled per tail-beat
+        % 3. STRIDE LENGTH: mean forward distance traveled per tail-beat
         %    cycle. Needs tail_TBF from compute_kinematics.
         % ================================================================
         stride_length_BL = NaN;
@@ -256,7 +256,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         end
 
         % ================================================================
-        % 3b. STROUHAL NUMBER — St = tail_TBF * A_pp / U
+        % 3b. STROUHAL NUMBER: St = tail_TBF * A_pp / U
         %     A_pp = peak-to-peak trailing-edge (tail point) lateral
         %     excursion in BL. For a sinusoid, amplitude A = sqrt(2)*std,
         %     so A_pp = 2*sqrt(2)*std(tail Y). U = mean through-water
@@ -274,8 +274,8 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
                 % distance from a SMOOTHED version of the fitted axis
                 % (line orientation + middle-point centroid averaged over
                 % ~1.5 beat periods). The orientation is smoothed as the
-                % complex vector exp(i*2*alpha) — invariant to the line's
-                % +/-180 deg ambiguity — so it also survives the large
+                % complex vector exp(i*2*alpha), invariant to the line's
+                % +/-180 deg ambiguity, so it also survives the large
                 % heading swings / mirror flips of turning or walking
                 % fish. Validated: synthetic raw A_pp=0.153 vs true 0.100
                 % -> 0.104; robust to slow drift and to walking-shark
@@ -292,7 +292,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
                     if isfinite(tbf) && tbf > 0
                         win = round(1.5 * fps / tbf);
                     else
-                        win = 2 * fps;   % no beat detected — 2 s window
+                        win = 2 * fps;   % no beat detected: 2 s window
                     end
                     win = max(win, 5);
                     win = min(win, nFrames);
@@ -363,7 +363,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
         end
 
         % ================================================================
-        % 5. ROLL — only if a valid left/right point pair is supplied.
+        % 5. ROLL: only if a valid left/right point pair is supplied.
         % ================================================================
         roll_available = false;
         roll_deg = NaN(nFrames, 1);
@@ -389,7 +389,7 @@ function ext = compute_body_extended(fish_points, fps, kine, roll_pair, flow_BL_
                 end
             else
                 warning(['compute_body_extended: roll_pair points "%s"/"%s" not found ' ...
-                         'in %s''s point_names — roll not computed.'], ...
+                         'in %s''s point_names: roll not computed.'], ...
                          roll_pair{1}, roll_pair{2}, fish_points(fi).name);
             end
         end

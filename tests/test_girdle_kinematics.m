@@ -2,7 +2,7 @@ function test_girdle_kinematics()
 % TEST_GIRDLE_KINEMATICS  Ground-truth checks for compute_girdle_kinematics.m.
 %
 %   A girdle point rigidly attached to a straight (A=0), heading-0 fish at
-%   body-frame position (x_b(t) = -3 + 0.1*sin(2*pi*f0*t), y_b = 0.5) — a
+%   body-frame position (x_b(t) = -3 + 0.1*sin(2*pi*f0*t), y_b = 0.5), a
 %   fore-aft oscillation of 0.1 camera units on a 10-unit body. After
 %   projection into the body frame (head at X=0, tail at X=1, X = -x_b/L):
 %     X = 0.3 - 0.01*sin(2*pi*f0*t),  Y = 0.05 exactly

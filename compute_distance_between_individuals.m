@@ -5,7 +5,7 @@ function dist = compute_distance_between_individuals(fish_points, snoutName, cm_
 %   dist = compute_distance_between_individuals(fish_points, snoutName)
 %   dist = compute_distance_between_individuals(fish_points, snoutName, cm_per_unit)
 %
-%   Pass the RAW (untransformed) fish_points struct array — same
+%   Pass the RAW (untransformed) fish_points struct array, same
 %   reasoning as compute_polarization.m: this needs everyone in the same
 %   shared (camera/world) coordinate frame, not each fish's own private
 %   post-transform_fish frame.
@@ -20,18 +20,18 @@ function dist = compute_distance_between_individuals(fish_points, snoutName, cm_
 %                     already calibrated to cm, leave this at the default
 %                     of 1.0; if it's in pixels, this needs to be your
 %                     pixel-to-cm calibration factor for the distances
-%                     below to actually be in cm as intended). Default 1.0
-%                     — i.e. distances are reported in whatever units your
+%                     below to actually be in cm as intended). Default 1.0,
+%                     i.e. distances are reported in whatever units your
 %                     raw coordinates are already in unless you supply this.
 %
-%   OUTPUT  dist — struct:
+%   OUTPUT  dist: struct:
 %     .pairwise_dist       [nFrames x nFish x nFish] symmetric distance
 %                          matrix per frame (NaN on the diagonal and
 %                          wherever a fish's snout isn't tracked that frame)
 %     .fish_names          {1 x nFish} cell array of names, matching the
 %                          pairwise_dist indexing
 %     .mean_nn_dist        [nFrames x 1] mean NEAREST-NEIGHBOR distance
-%                          per frame — each fish's distance to its single
+%                          per frame, each fish's distance to its single
 %                          closest neighbor, averaged across fish present
 %     .mean_pairwise_dist  [nFrames x 1] mean of ALL pairwise distances
 %                          per frame (not just nearest-neighbor)
@@ -43,7 +43,7 @@ function dist = compute_distance_between_individuals(fish_points, snoutName, cm_
 
     nFish = numel(fish_points);
     if nFish < 2
-        warning(['compute_distance_between_individuals: only %d fish provided — ' ...
+        warning(['compute_distance_between_individuals: only %d fish provided: ' ...
                  'inter-individual distance needs at least 2.'], nFish);
     end
 
@@ -56,7 +56,7 @@ function dist = compute_distance_between_individuals(fish_points, snoutName, cm_
         pn = fish_points(k).point_names;
         iSnout = find(strcmpi(pn, snoutName), 1);
         if isempty(iSnout)
-            warning('compute_distance_between_individuals: fish %d ("%s") missing "%s" — excluded.', ...
+            warning('compute_distance_between_individuals: fish %d ("%s") missing "%s": excluded.', ...
                      k, fish_names{k}, snoutName);
             continue;
         end
@@ -102,7 +102,7 @@ function dist = compute_distance_between_individuals(fish_points, snoutName, cm_
              'mean pairwise dist = %s (units: raw * %.4g)\n'], nFish, ...
             fmt_val(dist.overall_mean_nn_dist), fmt_val(dist.overall_mean_pairwise_dist), cm_per_unit);
     if cm_per_unit == 1.0
-        fprintf(['  NOTE: cm_per_unit was left at the default (1.0) — these distances are in ' ...
+        fprintf(['  NOTE: cm_per_unit was left at the default (1.0), these distances are in ' ...
                  'whatever units your raw coordinates are in, NOT necessarily cm. Pass your ' ...
                  'pixel-to-cm (or other unit-to-cm) calibration factor if you need real cm.\n']);
     end

@@ -1,7 +1,7 @@
 function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_point_names, window_frames)
-% FILTER_DLC_JUMPS  Remove DeepLabCut "teleport" tracking errors — a point
+% FILTER_DLC_JUMPS  Remove DeepLabCut "teleport" tracking errors, a point
 %                    that jumps far away for a frame or two, usually to a
-%                    confusable body part or background feature — before
+%                    confusable body part or background feature, before
 %                    they corrupt downstream kinematics.
 %
 %   fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_point_names)
@@ -16,13 +16,13 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
 %   by more than jump_threshold_frac * body_length, it's replaced with
 %   NaN. Using a local median (not just "did it move a lot from the
 %   previous frame") means a genuine fast movement across several frames
-%   isn't mistaken for an error, while a single-frame teleport — which
-%   stands out sharply against its own neighbors — is caught regardless
+%   isn't mistaken for an error, while a single-frame teleport, which
+%   stands out sharply against its own neighbors, is caught regardless
 %   of whether the bad frame is the one BEFORE or AFTER a real jump.
 %
 %   INPUTS
 %     fish_points          - struct or struct array (RAW, pre-transform_fish
-%                            or post — works on whatever coordinate frame
+%                            or post, works on whatever coordinate frame
 %                            .points is in, since it only compares a point
 %                            to its own recent history). Needs .points
 %                            [nFrames x nPoints x nDims] and .point_names.
@@ -40,7 +40,7 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
 %     window_frames        - (optional) total window size (frames) used
 %                            for the local median, centered on the frame
 %                            being tested (excluding it). Default 13 (6
-%                            frames before + 6 after) — see VALIDATION
+%                            frames before + 6 after), see VALIDATION
 %                            below for why this default was chosen over
 %                            a smaller window. Shrinks near the start/end
 %                            of the trial where a full window isn't
@@ -52,7 +52,7 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
 %     - A single-frame teleport is caught correctly at any window size
 %       from 5 upward.
 %     - A CONSECUTIVE multi-frame jump (the same point stuck on a wrong
-%       feature for several frames in a row — a common real DLC failure
+%       feature for several frames in a row, a common real DLC failure
 %       mode during brief occlusion, not just an isolated glitch) is
 %       where window size matters a lot:
 %         * window=5 on a 5-consecutive-frame injected jump: MISSED the
@@ -71,14 +71,14 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
 %   frames (e.g. an extended occlusion) can still evade this method,
 %   because the corrupted frames start to "vote for each other" in the
 %   local median. If you suspect a long bad-tracking stretch, increase
-%   window_frames further, or — better — visually spot-check the point's
+%   window_frames further, or better, visually spot-check the point's
 %   trajectory (or use DLC's own per-point likelihood column, if you kept
 %   it, as an independent filter) rather than trusting this alone.
 %
-%   OUTPUT  fish_points — same struct, with outlier frames set to NaN in
+%   OUTPUT  fish_points: same struct, with outlier frames set to NaN in
 %   .points (and .n_points_filtered / .pct_points_filtered added per fish
 %   for transparency). Re-run transform_fish/compute_kinematics on the
-%   result as usual — NaN handling throughout this toolkit already treats
+%   result as usual, NaN handling throughout this toolkit already treats
 %   missing frames correctly rather than fabricating values for them.
 
     if nargin < 2 || isempty(jump_threshold_frac), jump_threshold_frac = 0.5; end
@@ -98,7 +98,7 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
             i1 = 1; i2 = nPoints;
         end
         if isempty(i1) || isempty(i2)
-            warning(['filter_dlc_jumps: reference points not found for fish %d ("%s") — ' ...
+            warning(['filter_dlc_jumps: reference points not found for fish %d ("%s"): ' ...
                      'skipping (no filtering applied to this fish).'], k, safe_name(fish_points(k)));
             continue;
         end
@@ -110,14 +110,14 @@ function fish_points = filter_dlc_jumps(fish_points, jump_threshold_frac, ref_po
 
         if isnan(body_length) || body_length <= 0
             warning(['filter_dlc_jumps: could not estimate a valid body length for fish %d ' ...
-                     '("%s") — skipping (no filtering applied to this fish).'], ...
+                     '("%s"): skipping (no filtering applied to this fish).'], ...
                      k, safe_name(fish_points(k)));
             continue;
         end
         threshold = jump_threshold_frac * body_length;
 
         % ---- Per-point local-median outlier filtering ----
-        % Tracked point-frames (XY present) — excludes leading/trailing
+        % Tracked point-frames (XY present), excludes leading/trailing
         % all-empty padding rows common in exported CSVs.
         n_present = sum(any(~isnan(pts(:, :, 1:min(2,nDims))), 3), 'all');
         n_filtered = 0;

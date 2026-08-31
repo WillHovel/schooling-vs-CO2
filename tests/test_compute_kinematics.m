@@ -3,7 +3,7 @@ function test_compute_kinematics()
 %
 %   All ground truth comes from synth_fish (exact known camera geometry):
 %    1. straight horizontal fish, lambda=1, constant A: the fully exact
-%       case — TBFs land exactly on the FFT bin, Y_interp must reproduce
+%       case: TBFs land exactly on the FFT bin, Y_interp must reproduce
 %       the known wave (after the documented spatial-mean removal) to 1e-9,
 %       amplitudes equal the known time-mean (2/pi)*A/L, wavelength = 1,
 %       maxCurv = the known wave curvature, wave_speed = wavelength*tail_TBF;
@@ -11,7 +11,7 @@ function test_compute_kinematics()
 %    3. modulated amplitude envelope A(s): the full amplitude profile,
 %       head/tail ratio, and max/min locations match the analytic envelope;
 %    4. tilted path (30 deg): the case that carries the line-wobble
-%       contamination — if the pipeline is exact, wavelength still
+%       contamination; if the pipeline is exact, wavelength still
 %       measures 1 to within 2%;
 %    5. circling fish: TBFs and wavelength survive a turning path;
 %    6. standing wave: the wavelength gate must return NaN, not a
@@ -103,7 +103,7 @@ function test_compute_kinematics()
     check_close(km.wavelength, 1, 1e-2, 'modulated: wavelength unaffected by envelope');
     % At the envelope peak (s = 0.25, E = 1.5 A) the second derivative is
     % (E'' - E*(2 pi)^2)*sin(phi) with E'' = -0.5 A (2 pi)^2, so the
-    % curvature coefficient is 2*A*(2 pi)^2 — not 1.5*A*(2 pi)^2 (the
+    % curvature coefficient is 2*A*(2 pi)^2, not 1.5*A*(2 pi)^2 (the
     % envelope's own curvature adds to the wave's).
     check_close(km.maxCurv, (2/pi) * 2 * A_bl * (2*pi)^2, 4e-2, 'modulated maxCurv');
     check_close(km.maxCurvLoc, 0.25, 3e-2, 'modulated maxCurvLoc = amplitude peak');

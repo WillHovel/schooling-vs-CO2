@@ -16,13 +16,13 @@ frame_ids  = frame_ids(1:min(n_frames, end));
 cmap = parula(numel(frame_ids));      % one colour per frame
 
 %% 3. Plot: before (raw) on the left, after (rotated+translated) on the right
-figure('Name', sprintf('Transform check — %s', fp(fish_idx).name), ...
+figure('Name', sprintf('Transform check: %s', fp(fish_idx).name), ...
        'Position', [100 100 1000 420]);
 
 % ---------- Before ----------
 subplot(1, 2, 1);
 hold on; grid on; axis equal;
-title(sprintf('%s — Raw points', fp(fish_idx).name));
+title(sprintf('%s: Raw points', fp(fish_idx).name));
 xlabel('x (pixels)');  ylabel('y (pixels)');
 
 for k = 1:numel(frame_ids)
@@ -42,7 +42,7 @@ legend({'midline','','head (P1)','tail (P5)'}, 'Location','best');
 % ---------- After ----------
 subplot(1, 2, 2);
 hold on; grid on; axis equal;
-title(sprintf('%s — Rotated & translated (X, Y)', fp(fish_idx).name));
+title(sprintf('%s: Rotated & translated (X, Y)', fp(fish_idx).name));
 xlabel('X (nose = 0)');  ylabel('Y');
 yline(0, 'k--', 'LineWidth', 0.8);   % x-axis reference
 
@@ -63,4 +63,4 @@ cb = colorbar;
 cb.Label.String = 'Frame (early → late)';
 clim([frame_ids(1) frame_ids(end)]);
 
-sgtitle('Fish midline transformation — middle 3 points used for rotation');
+sgtitle('Fish midline transformation: middle 3 points used for rotation');

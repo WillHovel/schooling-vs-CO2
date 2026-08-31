@@ -3,7 +3,7 @@ function run_all_tests()
 %
 %   Adds the repo root and tests/ to the path, runs every test_*.m in
 %   try/catch, prints PASS/FAIL per file plus the first error and its
-%   stack, and errors out (non-zero exit) if any file failed — so it works
+%   stack, and errors out (non-zero exit) if any file failed, so it works
 %   headlessly:
 %       matlab -batch "cd('C:\Users\willh\Desktop\fish_analysis_v2'); run_all_tests"
 

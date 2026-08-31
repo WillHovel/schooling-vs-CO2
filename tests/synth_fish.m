@@ -9,8 +9,8 @@ function fp = synth_fish(varargin)
 %   lies on the negative x-axis (head at the origin, tail at -L) and each
 %   station carries a lateral traveling wave
 %       y_b(s,t) = A(s) * sin(2*pi*(f0*t - s/lambda))
-%   (phase lags toward the tail — the propulsive direction). A(s) may be
-%   a scalar (constant amplitude — the exactly-validated case) or a
+%   (phase lags toward the tail, the propulsive direction). A(s) may be
+%   a scalar (constant amplitude, the exactly-validated case) or a
 %   function handle of s. The fish swims along a path at ground speed U:
 %     'path' = 'straight'  -> heading(t) fixed, position = U*t along heading
 %              'stationary'-> heading(t) may still vary, no translation
@@ -21,10 +21,10 @@ function fp = synth_fish(varargin)
 %   z_head is a scalar height or function of t and z_off_i is a per-point
 %   offset (e.g. a pitch ramp). Any z option makes the fish 3D (has_z).
 %
-%   OUTPUT fp — struct in the toolkit's fish_points schema:
+%   OUTPUT fp: struct in the toolkit's fish_points schema:
 %     .name, .frames, .point_names, .points, .has_z, .format
 %   plus .gt (ground truth): f0, lambda, A (fn of s), U, L, heading (fn of
-%   t), path, nPts — everything a test needs to compute expected metrics.
+%   t), path, nPts, everything a test needs to compute expected metrics.
 %
 %   Name/Value options:
 %     fps (100)  nFrames (400)  nPts (21)
